@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:fl_nodes_core/src/core/models/data.dart';
 import 'package:fl_nodes_core/src/styles/link_effect.dart';
 
+export 'package:fl_nodes_core/src/styles/flowing_dash_effect.dart';
 export 'package:fl_nodes_core/src/styles/link_effect.dart';
 
 enum FlLineDrawMode {

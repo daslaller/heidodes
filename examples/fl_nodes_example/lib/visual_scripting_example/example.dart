@@ -8,6 +8,7 @@ import 'package:fl_nodes_example/utils/context_menu.dart';
 import 'package:fl_nodes_example/utils/snackbar.dart';
 import 'package:fl_nodes_example/visual_scripting_example/nodes/data/handlers.dart';
 import 'package:fl_nodes_example/visual_scripting_example/nodes/prototypes/prototypes.dart';
+import 'package:fl_nodes_example/visual_scripting_example/nodes/styles/theme.dart';
 import 'package:fl_nodes_example/visual_scripting_example/widgets/hierarchy.dart';
 import 'package:fl_nodes_example/visual_scripting_example/widgets/instructions.dart';
 import 'package:fl_nodes_example/visual_scripting_example/widgets/settings.dart';
@@ -69,6 +70,7 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
 
     _nodeEditorController = FlNodesController(
       appVersion: '0.0.1',
+      style: VyuhEditorTheme.editorStyle(),
       projectSaver: (jsonData) async {
         final String? outputPath = await FilePicker.platform.saveFile(
           dialogTitle: AppLocalizations.of(context)!.saveProjectDialogTitle,
@@ -229,90 +231,94 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
   }
 
   @override
-  Widget build(BuildContext context) => Scaffold(
-    body: FlNodesShortcutsWidget(
-      controller: _nodeEditorController,
-      child: Row(
-        children: [
-          ClipRect(
-            child: TweenAnimationBuilder<double>(
-              tween: Tween<double>(
-                begin: isHierarchyCollapsed ? 1.0 : 0.0,
-                end: isHierarchyCollapsed ? 0.0 : 1.0,
-              ),
-              duration: const Duration(milliseconds: 300),
-              curve: Curves.easeInOut,
-              onEnd: () {
-                setState(() {
-                  isHierarchyFullyCollapsed = isHierarchyCollapsed;
-                });
-              },
-              builder: (context, widthFactor, child) => Align(
-                alignment: Alignment.centerLeft,
-                widthFactor: widthFactor.clamp(0.0, 1.0),
-                child: child,
-              ),
-              child: SizedBox(
-                width: 300,
-                child: HierarchyWidget(
-                  controller: _nodeEditorController,
-                  isCollapsed: isHierarchyFullyCollapsed,
+  Widget build(BuildContext context) => Theme(
+    data: VyuhEditorTheme.materialTheme(),
+    child: Scaffold(
+      backgroundColor: VyuhEditorTheme.canvas,
+      body: FlNodesShortcutsWidget(
+        controller: _nodeEditorController,
+        child: Row(
+          children: [
+            ClipRect(
+              child: TweenAnimationBuilder<double>(
+                tween: Tween<double>(
+                  begin: isHierarchyCollapsed ? 1.0 : 0.0,
+                  end: isHierarchyCollapsed ? 0.0 : 1.0,
+                ),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+                onEnd: () {
+                  setState(() {
+                    isHierarchyFullyCollapsed = isHierarchyCollapsed;
+                  });
+                },
+                builder: (context, widthFactor, child) => Align(
+                  alignment: Alignment.centerLeft,
+                  widthFactor: widthFactor.clamp(0.0, 1.0),
+                  child: child,
+                ),
+                child: SizedBox(
+                  width: 300,
+                  child: HierarchyWidget(
+                    controller: _nodeEditorController,
+                    isCollapsed: isHierarchyFullyCollapsed,
+                  ),
                 ),
               ),
             ),
-          ),
-          Expanded(
-            child: Column(
-              children: [
-                Expanded(
-                  child: FlNodesWidget(
-                    controller: _nodeEditorController,
-                    expandToParent: true,
+            Expanded(
+              child: Column(
+                children: [
+                  Expanded(
+                    child: FlNodesWidget(
+                      controller: _nodeEditorController,
+                      expandToParent: true,
 
-                    nodeBuilder: (node, controller) => FlDefaultNodeWidget(
-                      node: node,
-                      controller: controller,
+                      nodeBuilder: (node, controller) => FlDefaultNodeWidget(
+                        node: node,
+                        controller: controller,
+                        showPortContextMenu: ShowContextMenuUtils.showPortContextMenu,
+                        showNodeCreationMenu: ShowContextMenuUtils.showNodeCreationMenu,
+                        showNodeContextMenu: ShowContextMenuUtils.showNodeContextMenu,
+                      ),
                       showPortContextMenu: ShowContextMenuUtils.showPortContextMenu,
+                      showCanvasContextMenu: ShowContextMenuUtils.showCanvasContextMenu,
                       showNodeCreationMenu: ShowContextMenuUtils.showNodeCreationMenu,
-                      showNodeContextMenu: ShowContextMenuUtils.showNodeContextMenu,
+                      showLinkContextMenu: ShowContextMenuUtils.showLinkContextMenu,
                     ),
-                    showPortContextMenu: ShowContextMenuUtils.showPortContextMenu,
-                    showCanvasContextMenu: ShowContextMenuUtils.showCanvasContextMenu,
-                    showNodeCreationMenu: ShowContextMenuUtils.showNodeCreationMenu,
-                    showLinkContextMenu: ShowContextMenuUtils.showLinkContextMenu,
                   ),
-                ),
-                ClipRect(
-                  child: TweenAnimationBuilder<double>(
-                    tween: Tween<double>(
-                      begin: isTerminalCollapsed ? 1.0 : 0.0,
-                      end: isTerminalCollapsed ? 0.0 : 1.0,
-                    ),
-                    duration: const Duration(milliseconds: 300),
-                    curve: Curves.easeInOut,
-                    onEnd: () {
-                      setState(() {
-                        isTerminalFullyCollapsed = isTerminalCollapsed;
-                      });
-                    },
-                    builder: (context, heightFactor, child) => Align(
-                      alignment: Alignment.bottomCenter,
-                      heightFactor: heightFactor.clamp(0.0, 1.0),
-                      child: child,
-                    ),
-                    child: SizedBox(
-                      height: 400,
-                      child: TerminalWidget(
-                        controller: _terminalController,
-                        isCollapsed: isTerminalFullyCollapsed,
+                  ClipRect(
+                    child: TweenAnimationBuilder<double>(
+                      tween: Tween<double>(
+                        begin: isTerminalCollapsed ? 1.0 : 0.0,
+                        end: isTerminalCollapsed ? 0.0 : 1.0,
+                      ),
+                      duration: const Duration(milliseconds: 300),
+                      curve: Curves.easeInOut,
+                      onEnd: () {
+                        setState(() {
+                          isTerminalFullyCollapsed = isTerminalCollapsed;
+                        });
+                      },
+                      builder: (context, heightFactor, child) => Align(
+                        alignment: Alignment.bottomCenter,
+                        heightFactor: heightFactor.clamp(0.0, 1.0),
+                        child: child,
+                      ),
+                      child: SizedBox(
+                        height: 400,
+                        child: TerminalWidget(
+                          controller: _terminalController,
+                          isCollapsed: isTerminalFullyCollapsed,
+                        ),
                       ),
                     ),
                   ),
-                ),
-              ],
+                ],
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     ),
   );
@@ -388,13 +394,13 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
                 icon: Icons.handyman,
                 tooltip: AppLocalizations.of(context)!.buildGraphTooltip,
                 onPressed: () => _nodeEditorController.runner.buildGraph(),
-                color: Colors.blue,
+                color: const Color(0xFF818CF8),
               ),
               _buildToolbarButton(
                 icon: Icons.play_arrow,
                 tooltip: AppLocalizations.of(context)!.executeGraphTooltip,
                 onPressed: () => _nodeEditorController.runner.executeGraph(context: context),
-                color: Colors.green,
+                color: const Color(0xFF34D399),
               ),
             ],
           ),
@@ -406,7 +412,7 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
                 icon: Icons.star_border,
                 tooltip: strings.starOnGitHubTooltip,
                 onPressed: _launchGitHub,
-                color: Colors.amber,
+                color: const Color(0xFFF59E0B),
               ),
               _buildToolbarButton(
                 icon: Icons.settings,
@@ -428,14 +434,12 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
   Widget _buildToobarSection({required List<Widget> children}) => Container(
     padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
     decoration: BoxDecoration(
-      color: Theme.of(context).colorScheme.surface.withAlpha(230),
-      borderRadius: BorderRadius.circular(12),
-      border: Border.all(
-        color: Theme.of(context).colorScheme.outline.withAlpha(51),
-      ),
+      color: Colors.white.withValues(alpha: 0.92),
+      borderRadius: BorderRadius.circular(10),
+      border: Border.all(color: const Color(0xFFCBD5E1)),
       boxShadow: [
         BoxShadow(
-          color: Colors.black.withAlpha(25),
+          color: Colors.black.withValues(alpha: 0.06),
           blurRadius: 8,
           offset: const Offset(0, 2),
         ),
@@ -464,8 +468,8 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
           padding: const EdgeInsets.all(8),
           child: Icon(
             icon,
-            size: 20,
-            color: color ?? Theme.of(context).colorScheme.onSurface,
+            size: 18,
+            color: color ?? const Color(0xFF475569),
           ),
         ),
       ),

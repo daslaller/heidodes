@@ -85,6 +85,7 @@ export 'package:fl_nodes_core/src/core/utils/rendering/renderbox.dart' show Rend
 export 'package:fl_nodes_core/src/styles/styles.dart'
     show
         FlFieldStyle,
+        FlowingDashEffect,
         FlGridStyle,
         FlHighlightAreaStyle,
         FlLineDrawMode,

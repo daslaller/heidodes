@@ -61,10 +61,13 @@ class _FlNodesExampleAppState extends State<FlNodesExampleApp> {
     supportedLocales: SupportedLocale.values.map((l) => l.locale).toList(),
     locale: _locale,
     title: 'Fl Nodes Example',
-    theme: ThemeData.dark().copyWith(
+    theme: ThemeData(
+      useMaterial3: true,
+      brightness: Brightness.light,
+      scaffoldBackgroundColor: const Color(0xFFFAFAFA),
       colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.blue,
-        brightness: Brightness.dark,
+        seedColor: const Color(0xFF818CF8),
+        brightness: Brightness.light,
       ),
     ),
     home: ExampleGalleryScreen(

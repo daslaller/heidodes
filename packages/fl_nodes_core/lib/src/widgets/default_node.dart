@@ -172,8 +172,9 @@ class _NodeHeaderWidget extends StatelessWidget {
               ),
               child: Icon(
                 node.builtHeaderStyle.icon,
-                color: Colors.white,
-                size: 20,
+                color: node.builtHeaderStyle.textStyle.color ??
+                    Theme.of(context).colorScheme.onSurface,
+                size: 16,
               ),
             ),
             const SizedBox(width: 8),
@@ -223,7 +224,10 @@ class _PortWidget extends StatelessWidget {
         Flexible(
           child: Text(
             port.prototype.displayName(context),
-            style: const TextStyle(color: Colors.white70, fontSize: 13),
+            style: TextStyle(
+              color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+              fontSize: 12,
+            ),
             overflow: TextOverflow.ellipsis,
             textAlign: isInput ? TextAlign.left : TextAlign.right,
           ),
@@ -327,7 +331,10 @@ class _FieldWidget extends StatelessWidget {
               Flexible(
                 child: Text(
                   field.prototype.displayName(context),
-                  style: const TextStyle(color: Colors.white70, fontSize: 13),
+                  style: TextStyle(
+                    color: Theme.of(context).colorScheme.onSurface.withValues(alpha: 0.7),
+                    fontSize: 12,
+                  ),
                   overflow: TextOverflow.ellipsis,
                 ),
               ),

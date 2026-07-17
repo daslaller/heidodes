@@ -4,6 +4,8 @@ import 'package:fl_nodes/fl_nodes.dart';
 import 'package:fl_nodes_example/l10n/app_localizations.dart';
 import 'package:fl_nodes_example/visual_scripting_example/nodes/data/types.dart';
 import 'package:fl_nodes_example/visual_scripting_example/nodes/styles/headers.dart';
+import 'package:fl_nodes_example/visual_scripting_example/nodes/styles/nodes.dart';
+import 'package:fl_nodes_example/visual_scripting_example/nodes/styles/theme.dart';
 import 'package:fl_nodes_example/visual_scripting_example/nodes/styles/ports.dart';
 import 'package:fl_nodes_example/visual_scripting_example/widgets/terminal.dart';
 import 'package:flutter/material.dart';
@@ -25,6 +27,7 @@ FlNodePrototype createValueNode<T>({
   idName: 'value.$idName',
   displayName: displayName,
   description: (context) => AppLocalizations.of(context)!.valueNodeDescription(T.toString()),
+  styleBuilder: NodeStyles.standard,
   headerStyleBuilder: NodeHeaderStyles.value,
   portPrototypes: [
     FlControlOutputPortPrototype(
@@ -47,6 +50,7 @@ FlNodePrototype createValueNode<T>({
       displayName: (context) => AppLocalizations.of(context)!.valueFieldName,
       dataType: T,
       defaultData: defaultValue,
+      style: VyuhEditorTheme.fieldStyle,
       visualizerBuilder: (data) => visualizerBuilder(data as T),
       onVisualizerTap: onVisualizerTap,
       editorBuilder: editorBuilder,
@@ -72,7 +76,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           softWrap: false,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: VyuhEditorTheme.text),
         ),
         editorBuilder: (context, removeOverlay, data, setData) => ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 100),
@@ -102,7 +106,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         displayName: (context) => AppLocalizations.of(context)!.booleanValueNodeName,
         defaultValue: false,
         visualizerBuilder: (data) =>
-            Icon(data ? Icons.check : Icons.close, color: Colors.white, size: 18),
+            Icon(data ? Icons.check : Icons.close, color: VyuhEditorTheme.text, size: 18),
         onVisualizerTap: (data, setData) => setData(!(data as bool)),
       ),
     )
@@ -116,7 +120,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           softWrap: false,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: VyuhEditorTheme.text),
         ),
         editorBuilder: (context, removeOverlay, data, setData) => ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 200),
@@ -143,7 +147,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           softWrap: false,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: VyuhEditorTheme.text),
         ),
         editorBuilder: (context, removeOverlay, data, setData) => ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 200),
@@ -178,7 +182,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           softWrap: false,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: VyuhEditorTheme.text),
         ),
         editorBuilder: (context, removeOverlay, data, setData) => ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 200),
@@ -223,7 +227,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           softWrap: false,
-          style: const TextStyle(color: Colors.white),
+          style: const TextStyle(color: VyuhEditorTheme.text),
         ),
         editorBuilder: (context, removeOverlay, data, setData) => ConstrainedBox(
           constraints: const BoxConstraints(maxWidth: 200),
@@ -246,6 +250,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'math.operator',
         displayName: (context) => AppLocalizations.of(context)!.operatorNodeName,
         description: (context) => AppLocalizations.of(context)!.operatorNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.math,
         portPrototypes: [
           FlControlInputPortPrototype(
@@ -286,11 +291,12 @@ void registerNodes(BuildContext context, FlNodesController controller) {
             displayName: (context) => AppLocalizations.of(context)!.operationPortName,
             dataType: Operator,
             defaultData: Operator.add,
+            style: VyuhEditorTheme.fieldStyle,
             visualizerBuilder: (data) => Text(
               data.toString().split('.').last,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: VyuhEditorTheme.text),
             ),
             editorBuilder: (context, removeOverlay, data, setData) => SegmentedButton<Operator>(
               segments: [
@@ -354,6 +360,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'generator.random',
         displayName: (context) => AppLocalizations.of(context)!.randomNodeName,
         description: (context) => AppLocalizations.of(context)!.randomNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.generator,
         portPrototypes: [
           FlControlOutputPortPrototype(
@@ -382,6 +389,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'flow.if',
         displayName: (context) => AppLocalizations.of(context)!.ifNodeName,
         description: (context) => AppLocalizations.of(context)!.ifNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.flow,
         portPrototypes: [
           FlControlInputPortPrototype(
@@ -421,6 +429,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'flow.forEachLoop',
         displayName: (context) => AppLocalizations.of(context)!.forEachLoopNodeName,
         description: (context) => AppLocalizations.of(context)!.forEachLoopNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.flow,
         portPrototypes: [
           FlControlInputPortPrototype(
@@ -488,6 +497,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'logic.comparator',
         displayName: (context) => AppLocalizations.of(context)!.comparatorNodeName,
         description: (context) => AppLocalizations.of(context)!.comparatorNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.logic,
         portPrototypes: [
           FlControlInputPortPrototype(
@@ -528,11 +538,12 @@ void registerNodes(BuildContext context, FlNodesController controller) {
             displayName: (context) => AppLocalizations.of(context)!.comparatorPortName,
             dataType: Comparator,
             defaultData: Comparator.equal,
+            style: VyuhEditorTheme.fieldStyle,
             visualizerBuilder: (data) => Text(
               data.toString().split('.').last,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: VyuhEditorTheme.text),
             ),
             editorBuilder: (context, removeOverlay, data, setData) => SegmentedButton<Comparator>(
               segments: const [
@@ -587,6 +598,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'io.print',
         displayName: (context) => AppLocalizations.of(context)!.printNodeName,
         description: (context) => AppLocalizations.of(context)!.printNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.io,
         portPrototypes: [
           FlControlInputPortPrototype(
@@ -620,6 +632,7 @@ void registerNodes(BuildContext context, FlNodesController controller) {
         idName: 'math.round',
         displayName: (context) => AppLocalizations.of(context)!.roundNodeName,
         description: (context) => AppLocalizations.of(context)!.roundNodeDescription,
+        styleBuilder: NodeStyles.standard,
         headerStyleBuilder: NodeHeaderStyles.math,
         portPrototypes: [
           FlControlInputPortPrototype(
@@ -654,11 +667,12 @@ void registerNodes(BuildContext context, FlNodesController controller) {
             displayName: (context) => AppLocalizations.of(context)!.decimalsFieldName,
             dataType: int,
             defaultData: 2,
+            style: VyuhEditorTheme.fieldStyle,
             visualizerBuilder: (data) => Text(
               data.toString(),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: Colors.white),
+              style: const TextStyle(color: VyuhEditorTheme.text),
             ),
             editorBuilder: (context, removeOverlay, data, setData) => ConstrainedBox(
               constraints: const BoxConstraints(maxWidth: 100),

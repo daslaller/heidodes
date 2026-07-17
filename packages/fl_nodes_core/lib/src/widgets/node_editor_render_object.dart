@@ -771,10 +771,18 @@ class NodeEditorRenderBox extends RenderBox
   final List<(PortLocator, Rect)> portsHitTestData = [];
 
   void _paintChildren(PaintingContext context) {
+    // Rebuild batches during proxy drag so ports/shadows track live parentData.
+    final bool dragOnlyRebuild = _controller.isDraggingSelection &&
+        !_controller.nodesDataDirty &&
+        !_controller.linksDataDirty &&
+        !_transformChanged &&
+        !_portsChanged;
+
     if (_controller.nodesDataDirty ||
         _controller.linksDataDirty ||
         _transformChanged ||
-        _portsChanged) {
+        _portsChanged ||
+        _controller.isDraggingSelection) {
       // Clear the old frame data
 
       selectedChildren.clear();
@@ -889,15 +897,19 @@ class NodeEditorRenderBox extends RenderBox
         batchPortByStyle[style]!.$1.addPath(path, Offset.zero);
       }
 
-      if (!_portsChanged) {
-        _portsChanged = true;
+      // Proxy drag already paints active links via nodePaintOffset; do not
+      // flip portsChanged (that would force the static link layer to re-record).
+      if (!dragOnlyRebuild) {
+        if (!_portsChanged) {
+          _portsChanged = true;
 
-        SchedulerBinding.instance.addPostFrameCallback((_) {
-          _markBothLinkLayersNeedsPaint();
-          markNeedsPaint();
-        });
-      } else {
-        _portsChanged = false;
+          SchedulerBinding.instance.addPostFrameCallback((_) {
+            _markBothLinkLayersNeedsPaint();
+            markNeedsPaint();
+          });
+        } else {
+          _portsChanged = false;
+        }
       }
     }
 

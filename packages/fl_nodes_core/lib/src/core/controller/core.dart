@@ -516,6 +516,23 @@ class FlNodesController with ChangeNotifier {
     eventBus.emit(FlActiveLinksMembershipEvent(id: const Uuid().v4()));
   }
 
+  /// Keeps links whose resolved [FlLinkStyle.effect] is set on the active tier.
+  void _syncLinkEffectMembership(FlLinkDataModel link) {
+    final FlPortDataModel? port1 =
+        nodes[link.ports.$1.nodeId]?.ports[link.ports.$1.portId];
+    if (port1 == null) {
+      _effectLinkIds.remove(link.id);
+      return;
+    }
+
+    final FlLinkStyle style = port1.style.linkStyleBuilder(link.state);
+    if (style.effect != null) {
+      _effectLinkIds.add(link.id);
+    } else {
+      _effectLinkIds.remove(link.id);
+    }
+  }
+
   void addActiveLinks(Iterable<String> linkIds) {
     var changed = false;
     for (final id in linkIds) {
@@ -806,6 +823,8 @@ class FlNodesController with ChangeNotifier {
       () => link,
     );
 
+    _syncLinkEffectMembership(link);
+    _rebuildActiveLinkIds();
     linksDataDirty = true;
 
     eventBus.emit(
@@ -851,6 +870,8 @@ class FlNodesController with ChangeNotifier {
 
     if (link.state.isSelected) selectedLinkIds.add(link.id);
 
+    _syncLinkEffectMembership(link);
+    _rebuildActiveLinkIds();
     linksDataDirty = true;
 
     eventBus.emit(
