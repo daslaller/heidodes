@@ -694,40 +694,47 @@ class NodeEditorRenderBox extends RenderBox
         )
         .union(_childrenNotPainted);
 
-    // needsCompositing: true so child repaint-boundary layers sit under a
-    // TransformLayer (canvas.transform would not apply to those layers).
-    // pushClipRect (not canvas.clipRect) so RepaintBoundary link/node layers
-    // cannot paint outside the editor into sibling UI.
-    context.pushTransform(true, offset, transform, (PaintingContext ctx, Offset off) {
-      ctx.pushClipRect(true, off, viewport, (PaintingContext clippedCtx, Offset clippedOff) {
-        _paintGrid(clippedCtx.canvas, viewport);
+    // Clip to the editor's local bounds first so nodes/links cannot paint into
+    // sibling UI. Then transform into world space. (Clipping the world viewport
+    // under the transform incorrectly empties RepaintBoundary link layers.)
+    context.pushClipRect(
+      true,
+      offset,
+      Offset.zero & size,
+      (PaintingContext clippedCtx, Offset clippedOff) {
+        clippedCtx.pushTransform(true, clippedOff, transform, (
+          PaintingContext ctx,
+          Offset off,
+        ) {
+          _paintGrid(ctx.canvas, viewport);
 
-        _staticLinksLayer.configure(
-          viewport: viewport,
-          transformChanged: _transformChanged,
-          portsChanged: _portsChanged,
-        );
-        _activeLinksLayer.configure(
-          viewport: viewport,
-          transformChanged: _transformChanged,
-          portsChanged: _portsChanged,
-        );
+          _staticLinksLayer.configure(
+            viewport: viewport,
+            transformChanged: _transformChanged,
+            portsChanged: _portsChanged,
+          );
+          _activeLinksLayer.configure(
+            viewport: viewport,
+            transformChanged: _transformChanged,
+            portsChanged: _portsChanged,
+          );
 
-        clippedCtx.paintChild(_staticLinksLayer, clippedOff);
-        clippedCtx.paintChild(_activeLinksLayer, clippedOff);
+          ctx.paintChild(_staticLinksLayer, off);
+          ctx.paintChild(_activeLinksLayer, off);
 
-        _paintChildren(clippedCtx);
+          _paintChildren(ctx);
 
-        _tmpLinkCustomPainter.paint(clippedCtx.canvas, viewport);
+          _tmpLinkCustomPainter.paint(ctx.canvas, viewport);
 
-        _selectionAreaPainter.paint(clippedCtx.canvas, viewport);
+          _selectionAreaPainter.paint(ctx.canvas, viewport);
 
-        if (kDebugMode) {
-          paintDebugViewport(clippedCtx.canvas, viewport);
-          paintDebugOffset(clippedCtx.canvas, size);
-        }
-      });
-    });
+          if (kDebugMode) {
+            paintDebugViewport(ctx.canvas, viewport);
+            paintDebugOffset(ctx.canvas, size);
+          }
+        });
+      },
+    );
 
     _controller.nodesDataDirty = false;
     _controller.linksDataDirty = false;

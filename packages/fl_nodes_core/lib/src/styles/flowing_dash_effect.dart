@@ -25,27 +25,26 @@ class FlowingDashEffect implements FlLinkEffect {
     Paint basePaint,
     double animationValue,
   ) {
-    final pathMetrics = path.computeMetrics();
-    if (pathMetrics.isEmpty) return;
-
-    final double totalLength = pathMetrics.fold<double>(
-      0,
-      (sum, metric) => sum + metric.length,
-    );
-    if (totalLength <= 0) return;
+    final PathMetrics metrics = path.computeMetrics();
+    if (metrics.isEmpty) return;
 
     final double patternLength = dashLength + gapLength;
+    if (patternLength <= 0) return;
+
     final double phase = (animationValue * speed * patternLength) % patternLength;
 
     final Paint effectPaint = Paint()
       ..color = color ?? basePaint.color
       ..strokeWidth = strokeWidth ?? basePaint.strokeWidth
       ..style = PaintingStyle.stroke
-      ..strokeCap = basePaint.strokeCap
-      ..strokeJoin = basePaint.strokeJoin
+      ..strokeCap = StrokeCap.round
+      ..strokeJoin = StrokeJoin.round
       ..isAntiAlias = true;
 
-    for (final metric in path.computeMetrics()) {
+    // Re-compute metrics: PathMetrics iteration is single-pass.
+    for (final PathMetric metric in path.computeMetrics()) {
+      if (metric.length <= 0) continue;
+
       var distance = -phase;
       while (distance < metric.length) {
         final double start = distance.clamp(0.0, metric.length);
