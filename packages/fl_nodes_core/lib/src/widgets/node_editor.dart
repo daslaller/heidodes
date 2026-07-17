@@ -57,7 +57,7 @@ class FlNodesWidget extends StatelessWidget {
       decoration: controller.style.decoration,
       padding: controller.style.padding,
       child: Stack(
-        clipBehavior: Clip.none,
+        clipBehavior: Clip.hardEdge,
         children: [
           NodeEditorDataLayer(
             controller: controller,

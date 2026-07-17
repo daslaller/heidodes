@@ -326,6 +326,7 @@ class ActiveLinksPainter extends FlCustomPainter {
     for (final (path, paint, style) in _drawnLinks) {
       final FlLinkEffect? effect = style.effect;
       if (effect != null) {
+        // Dashed/effect stroke only (Vyuh-style). Base underlay would hide stripes.
         effect.paint(canvas, path, paint, animationValue);
       } else {
         canvas.drawPath(path, paint);

@@ -7,16 +7,18 @@ import 'package:flutter/material.dart';
 /// Port styles matching Vyuh Image Effects Pipeline.
 abstract final class PortStyles {
   static const FlowingDashEffect _flowEffect = FlowingDashEffect(
-    dashLength: 6,
-    gapLength: 4,
-    speed: 2,
+    dashLength: 8,
+    gapLength: 6,
+    speed: 1.5,
   );
 
   static FlLinkStyle _linkStyle(FlLinkState state, Color accent) => FlLinkStyle(
-        color: state.isSelected || state.isHovered
+        color: state.isSelected
             ? VyuhEditorTheme.borderSelected
-            : VyuhEditorTheme.link,
-        lineWidth: state.isSelected || state.isHovered ? 2.0 : 1.5,
+            : state.isHovered
+                ? accent.withValues(alpha: 0.85)
+                : accent,
+        lineWidth: state.isSelected || state.isHovered ? 2.0 : 1.75,
         drawMode: FlLineDrawMode.solid,
         curveType: FlLinkCurveType.bezier,
         effect: _flowEffect,

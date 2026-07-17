@@ -53,6 +53,18 @@ class FlGridStyle {
         intersectionRadius = 1,
         showGrid = true;
 
+  /// Dot grid (lines off; intersection circles only).
+  const factory FlGridStyle.dots() = FlGridStyle._constDots;
+
+  const FlGridStyle._constDots()
+      : gridSpacingX = 24.0,
+        gridSpacingY = 24.0,
+        lineWidth = 0.0,
+        lineColor = const Color(0x00000000),
+        intersectionColor = const Color(0x66CBD5E1),
+        intersectionRadius = 1.25,
+        showGrid = true;
+
   FlGridStyle copyWith({
     double? gridSpacingX,
     double? gridSpacingY,

@@ -533,6 +533,17 @@ class FlNodesController with ChangeNotifier {
     }
   }
 
+  /// Recomputes effect membership for every link (e.g. after project load).
+  void resyncLinkEffects() {
+    _effectLinkIds.clear();
+    for (final FlLinkDataModel link in links.values) {
+      _syncLinkEffectMembership(link);
+    }
+    _rebuildActiveLinkIds();
+    linksDataDirty = true;
+    eventBus.emit(FlActiveLinksMembershipEvent(id: const Uuid().v4()));
+  }
+
   void addActiveLinks(Iterable<String> linkIds) {
     var changed = false;
     for (final id in linkIds) {

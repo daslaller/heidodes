@@ -308,6 +308,9 @@ class NodeEditorRenderBox extends RenderBox
       markNeedsLayout();
     } else if (event is FlLocaleChangeEvent || event is FlStyleChangeEvent) {
       _childrenNotLaidOut.addAll(_childrenById.keys);
+      if (event is FlStyleChangeEvent) {
+        _loadGridShader();
+      }
 
       markNeedsLayout();
 
@@ -693,39 +696,37 @@ class NodeEditorRenderBox extends RenderBox
 
     // needsCompositing: true so child repaint-boundary layers sit under a
     // TransformLayer (canvas.transform would not apply to those layers).
+    // pushClipRect (not canvas.clipRect) so RepaintBoundary link/node layers
+    // cannot paint outside the editor into sibling UI.
     context.pushTransform(true, offset, transform, (PaintingContext ctx, Offset off) {
-      ctx.canvas.clipRect(
-        viewport,
-        clipOp: ui.ClipOp.intersect,
-        doAntiAlias: false,
-      );
+      ctx.pushClipRect(true, off, viewport, (PaintingContext clippedCtx, Offset clippedOff) {
+        _paintGrid(clippedCtx.canvas, viewport);
 
-      _paintGrid(ctx.canvas, viewport);
+        _staticLinksLayer.configure(
+          viewport: viewport,
+          transformChanged: _transformChanged,
+          portsChanged: _portsChanged,
+        );
+        _activeLinksLayer.configure(
+          viewport: viewport,
+          transformChanged: _transformChanged,
+          portsChanged: _portsChanged,
+        );
 
-      _staticLinksLayer.configure(
-        viewport: viewport,
-        transformChanged: _transformChanged,
-        portsChanged: _portsChanged,
-      );
-      _activeLinksLayer.configure(
-        viewport: viewport,
-        transformChanged: _transformChanged,
-        portsChanged: _portsChanged,
-      );
+        clippedCtx.paintChild(_staticLinksLayer, clippedOff);
+        clippedCtx.paintChild(_activeLinksLayer, clippedOff);
 
-      ctx.paintChild(_staticLinksLayer, off);
-      ctx.paintChild(_activeLinksLayer, off);
+        _paintChildren(clippedCtx);
 
-      _paintChildren(ctx);
+        _tmpLinkCustomPainter.paint(clippedCtx.canvas, viewport);
 
-      _tmpLinkCustomPainter.paint(ctx.canvas, viewport);
+        _selectionAreaPainter.paint(clippedCtx.canvas, viewport);
 
-      _selectionAreaPainter.paint(ctx.canvas, viewport);
-
-      if (kDebugMode) {
-        paintDebugViewport(ctx.canvas, viewport);
-        paintDebugOffset(ctx.canvas, size);
-      }
+        if (kDebugMode) {
+          paintDebugViewport(clippedCtx.canvas, viewport);
+          paintDebugOffset(clippedCtx.canvas, size);
+        }
+      });
     });
 
     _controller.nodesDataDirty = false;

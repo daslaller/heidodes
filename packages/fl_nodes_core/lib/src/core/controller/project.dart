@@ -231,6 +231,9 @@ class FlNodesProjectHelper {
     controller.setViewportOffset(projectData.viewportOffset, absolute: true);
     controller.setViewportZoom(projectData.viewportZoom, absolute: true);
 
+    // Project load bypasses addLink*; sync effect-driven active membership now.
+    controller.resyncLinkEffects();
+
     isSaved = true;
 
     controller.eventBus.emit(FlLoadProjectEvent(id: const Uuid().v4()));

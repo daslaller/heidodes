@@ -37,18 +37,10 @@ abstract final class VyuhEditorTheme {
     padding: EdgeInsets.symmetric(horizontal: 10, vertical: 6),
   );
 
-  static FlNodesStyle editorStyle() => const FlNodesStyle(
-        decoration: BoxDecoration(color: canvas),
-        gridStyle: FlGridStyle(
-          gridSpacingX: 48,
-          gridSpacingY: 48,
-          lineWidth: 0,
-          lineColor: Colors.transparent,
-          intersectionColor: Colors.transparent,
-          intersectionRadius: 0,
-          showGrid: false,
-        ),
-        highlightAreaStyle: FlHighlightAreaStyle(
+  static FlNodesStyle editorStyle({bool showGrid = true}) => FlNodesStyle(
+        decoration: const BoxDecoration(color: canvas),
+        gridStyle: const FlGridStyle.dots().copyWith(showGrid: showGrid),
+        highlightAreaStyle: const FlHighlightAreaStyle(
           color: Color(0x26818CF8),
           borderWidth: 1,
           borderColor: Color(0xB3818CF8),

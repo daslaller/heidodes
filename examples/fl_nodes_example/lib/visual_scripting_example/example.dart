@@ -70,7 +70,7 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
 
     _nodeEditorController = FlNodesController(
       appVersion: '0.0.1',
-      style: VyuhEditorTheme.editorStyle(),
+      style: VyuhEditorTheme.editorStyle(showGrid: true),
       projectSaver: (jsonData) async {
         final String? outputPath = await FilePicker.platform.saveFile(
           dialogTitle: AppLocalizations.of(context)!.saveProjectDialogTitle,
@@ -267,54 +267,56 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
               ),
             ),
             Expanded(
-              child: Column(
-                children: [
-                  Expanded(
-                    child: FlNodesWidget(
-                      controller: _nodeEditorController,
-                      expandToParent: true,
+              child: ClipRect(
+                child: Column(
+                  children: [
+                    Expanded(
+                      child: FlNodesWidget(
+                        controller: _nodeEditorController,
+                        expandToParent: true,
 
-                      nodeBuilder: (node, controller) => FlDefaultNodeWidget(
-                        node: node,
-                        controller: controller,
+                        nodeBuilder: (node, controller) => FlDefaultNodeWidget(
+                          node: node,
+                          controller: controller,
+                          showPortContextMenu: ShowContextMenuUtils.showPortContextMenu,
+                          showNodeCreationMenu: ShowContextMenuUtils.showNodeCreationMenu,
+                          showNodeContextMenu: ShowContextMenuUtils.showNodeContextMenu,
+                        ),
                         showPortContextMenu: ShowContextMenuUtils.showPortContextMenu,
+                        showCanvasContextMenu: ShowContextMenuUtils.showCanvasContextMenu,
                         showNodeCreationMenu: ShowContextMenuUtils.showNodeCreationMenu,
-                        showNodeContextMenu: ShowContextMenuUtils.showNodeContextMenu,
+                        showLinkContextMenu: ShowContextMenuUtils.showLinkContextMenu,
                       ),
-                      showPortContextMenu: ShowContextMenuUtils.showPortContextMenu,
-                      showCanvasContextMenu: ShowContextMenuUtils.showCanvasContextMenu,
-                      showNodeCreationMenu: ShowContextMenuUtils.showNodeCreationMenu,
-                      showLinkContextMenu: ShowContextMenuUtils.showLinkContextMenu,
                     ),
-                  ),
-                  ClipRect(
-                    child: TweenAnimationBuilder<double>(
-                      tween: Tween<double>(
-                        begin: isTerminalCollapsed ? 1.0 : 0.0,
-                        end: isTerminalCollapsed ? 0.0 : 1.0,
-                      ),
-                      duration: const Duration(milliseconds: 300),
-                      curve: Curves.easeInOut,
-                      onEnd: () {
-                        setState(() {
-                          isTerminalFullyCollapsed = isTerminalCollapsed;
-                        });
-                      },
-                      builder: (context, heightFactor, child) => Align(
-                        alignment: Alignment.bottomCenter,
-                        heightFactor: heightFactor.clamp(0.0, 1.0),
-                        child: child,
-                      ),
-                      child: SizedBox(
-                        height: 400,
-                        child: TerminalWidget(
-                          controller: _terminalController,
-                          isCollapsed: isTerminalFullyCollapsed,
+                    ClipRect(
+                      child: TweenAnimationBuilder<double>(
+                        tween: Tween<double>(
+                          begin: isTerminalCollapsed ? 1.0 : 0.0,
+                          end: isTerminalCollapsed ? 0.0 : 1.0,
+                        ),
+                        duration: const Duration(milliseconds: 300),
+                        curve: Curves.easeInOut,
+                        onEnd: () {
+                          setState(() {
+                            isTerminalFullyCollapsed = isTerminalCollapsed;
+                          });
+                        },
+                        builder: (context, heightFactor, child) => Align(
+                          alignment: Alignment.bottomCenter,
+                          heightFactor: heightFactor.clamp(0.0, 1.0),
+                          child: child,
+                        ),
+                        child: SizedBox(
+                          height: 400,
+                          child: TerminalWidget(
+                            controller: _terminalController,
+                            isCollapsed: isTerminalFullyCollapsed,
+                          ),
                         ),
                       ),
                     ),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
           ],
@@ -380,14 +382,17 @@ class VisualScriptingExampleScreenState extends State<VisualScriptingExampleScre
                 onPressed: () => _nodeEditorController.history.redo(),
               ),
               _buildToolbarButton(
-                icon: _nodeEditorController.config.enableSnapToGrid
+                icon: _nodeEditorController.style.gridStyle.showGrid
                     ? Icons.grid_on
                     : Icons.grid_off,
                 tooltip: AppLocalizations.of(context)!.toggleSnapToGridTooltip,
                 onPressed: () => setState(() {
-                  _nodeEditorController.enableSnapToGrid(
-                    !_nodeEditorController.config.enableSnapToGrid,
+                  final bool next = !_nodeEditorController.style.gridStyle.showGrid;
+                  _nodeEditorController.setStyle(
+                    VyuhEditorTheme.editorStyle(showGrid: next),
                   );
+                  // Keep snap in sync with visible grid.
+                  _nodeEditorController.enableSnapToGrid(next);
                 }),
               ),
               _buildToolbarButton(
