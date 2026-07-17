@@ -1,6 +1,9 @@
 import 'package:flutter/material.dart';
 
 import 'package:fl_nodes_core/src/core/models/data.dart';
+import 'package:fl_nodes_core/src/styles/link_effect.dart';
+
+export 'package:fl_nodes_core/src/styles/link_effect.dart';
 
 enum FlLineDrawMode {
   solid,
@@ -116,6 +119,7 @@ class FlLinkStyle {
   final double lineWidth;
   final FlLineDrawMode drawMode;
   final FlLinkCurveType curveType;
+  final FlLinkEffect? effect;
 
   const FlLinkStyle({
     required this.lineWidth,
@@ -123,6 +127,7 @@ class FlLinkStyle {
     required this.curveType,
     this.color,
     this.gradient,
+    this.effect,
   });
 
   const factory FlLinkStyle.basic() = FlLinkStyle._constBasic;
@@ -132,13 +137,15 @@ class FlLinkStyle {
         lineWidth = 2.5,
         drawMode = FlLineDrawMode.solid,
         gradient = null,
-        curveType = FlLinkCurveType.bezier;
+        curveType = FlLinkCurveType.bezier,
+        effect = null;
 
   const FlLinkStyle.gradient({
     required this.gradient,
     required this.lineWidth,
     required this.drawMode,
     required this.curveType,
+    this.effect,
   }) : color = null;
 
   FlLinkStyle copyWith({
@@ -146,12 +153,16 @@ class FlLinkStyle {
     double? lineWidth,
     FlLineDrawMode? drawMode,
     FlLinkCurveType? curveType,
+    FlLinkEffect? effect,
+    bool clearEffect = false,
   }) =>
       FlLinkStyle(
         color: color ?? this.color,
         lineWidth: lineWidth ?? this.lineWidth,
         drawMode: drawMode ?? this.drawMode,
         curveType: curveType ?? this.curveType,
+        effect: clearEffect ? null : (effect ?? this.effect),
+        gradient: gradient,
       );
 
   FlLinkStyle copyWithGradient({
@@ -159,12 +170,15 @@ class FlLinkStyle {
     double? lineWidth,
     FlLineDrawMode? drawMode,
     FlLinkCurveType? curveType,
+    FlLinkEffect? effect,
+    bool clearEffect = false,
   }) =>
       FlLinkStyle.gradient(
         gradient: gradient,
         lineWidth: lineWidth ?? this.lineWidth,
         drawMode: drawMode ?? this.drawMode,
         curveType: curveType ?? this.curveType,
+        effect: clearEffect ? null : (effect ?? this.effect),
       );
 
   @override
@@ -172,6 +186,7 @@ class FlLinkStyle {
     if (identical(this, other)) return true;
     if (other is! FlLinkStyle) return false;
     if (gradient != null || other.gradient != null) return false;
+    if (effect != null || other.effect != null) return false;
 
     return color == other.color &&
         lineWidth == other.lineWidth &&

@@ -29,13 +29,8 @@ class FlNodesHistoryHelper {
 
   /// Handles undoable events.
   ///
-  /// If the event is not undoable, it is ignored.
-  ///
-  /// If the event is undoable and is not the same as the previous event,
-  /// the redo stack is cleared as the user has made a new change.
-  /// If the event is a [FlDragSelectionEvent] and the previous event is also a
-  /// [FlDragSelectionEvent] with the same node IDs, the previous event is popped
-  /// and a new [FlDragSelectionEvent] is pushed after adding the deltas.
+  /// Live [FlDragSelectionEvent] deltas are not undoable. Drag commits use
+  /// [FlDragSelectionCommitEvent] (one event per drag with total delta).
   void _handleUndoableEvents(NodeEditorEvent event) {
     if (!event.isUndoable || _isTraversingHistory) return;
 
@@ -56,22 +51,6 @@ class FlNodesHistoryHelper {
       return;
     }
 
-    if (event is FlDragSelectionEvent && previousEvent is FlDragSelectionEvent) {
-      if (event.nodeIds.length == previousEvent.nodeIds.length &&
-          event.nodeIds.every(previousEvent.nodeIds.contains)) {
-        _undoStack
-          ..pop()
-          ..push(
-            FlDragSelectionEvent(
-              id: event.id,
-              event.nodeIds,
-              event.delta + previousEvent.delta,
-            ),
-          );
-        return;
-      }
-    }
-
     _undoStack.push(event);
   }
 
@@ -84,7 +63,7 @@ class FlNodesHistoryHelper {
     _redoStack.push(event);
 
     try {
-      if (event is FlDragSelectionEvent) {
+      if (event is FlDragSelectionCommitEvent) {
         controller.selectNodesById(event.nodeIds, isHandled: true);
         controller.dragSelection(
           -event.delta,
@@ -116,7 +95,7 @@ class FlNodesHistoryHelper {
     _undoStack.push(event);
 
     try {
-      if (event is FlDragSelectionEvent) {
+      if (event is FlDragSelectionCommitEvent) {
         controller.selectNodesById(event.nodeIds, isHandled: true);
         controller.dragSelection(
           event.delta,

@@ -115,7 +115,13 @@ abstract class FlBaseNodeWidgetState<T extends FlBaseNodeWidget> extends State<T
   void _handleControllerEvents(NodeEditorEvent event) {
     if (!mounted || event.isHandled) return;
 
-    if (event is FlDragSelectionEvent) {
+    if (event is FlDragSelectionEndEvent) {
+      if (!event.nodeIds.contains(widget.node.id)) return;
+
+      SchedulerBinding.instance.addPostFrameCallback((_) {
+        if (mounted) updatePortsPosition();
+      });
+    } else if (event is FlDragSelectionCommitEvent) {
       if (!event.nodeIds.contains(widget.node.id)) return;
 
       SchedulerBinding.instance.addPostFrameCallback((_) {
@@ -314,6 +320,7 @@ abstract class FlBaseNodeWidgetState<T extends FlBaseNodeWidget> extends State<T
                   if (!widget.node.state.isSelected) {
                     widget.controller.selectNodesById({widget.node.id});
                   }
+                  widget.controller.beginDragSelection(position);
                 }
               },
               onPanUpdate: (details) {
@@ -342,6 +349,9 @@ abstract class FlBaseNodeWidgetState<T extends FlBaseNodeWidget> extends State<T
                   _isLinking = false;
                 } else {
                   _resetEdgeTimer();
+                  widget.controller.endDragSelection(
+                    _lastPanPosition ?? details.globalPosition,
+                  );
                 }
               },
               child: child,
@@ -380,11 +390,14 @@ abstract class FlBaseNodeWidgetState<T extends FlBaseNodeWidget> extends State<T
                 } else if (event.buttons == kPrimaryMouseButton) {
                   if (locator != null && !_isLinking && _portLocator == null) {
                     _onTmpLinkStart(locator);
-                  } else if (!widget.node.state.isSelected) {
-                    widget.controller.selectNodesById(
-                      {widget.node.id},
-                      holdSelection: HardwareKeyboard.instance.isControlPressed,
-                    );
+                  } else {
+                    if (!widget.node.state.isSelected) {
+                      widget.controller.selectNodesById(
+                        {widget.node.id},
+                        holdSelection: HardwareKeyboard.instance.isControlPressed,
+                      );
+                    }
+                    widget.controller.beginDragSelection(event.position);
                   }
                 }
               },
@@ -413,6 +426,7 @@ abstract class FlBaseNodeWidgetState<T extends FlBaseNodeWidget> extends State<T
                   }
                 } else {
                   _resetEdgeTimer();
+                  widget.controller.endDragSelection(event.position);
                 }
               },
               child: child,

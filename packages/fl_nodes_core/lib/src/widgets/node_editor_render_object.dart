@@ -120,7 +120,16 @@ class NodeEditorRenderBox extends RenderBox
         _showLinkContextMenu = showLinkContextMenu,
         _selectionAreaPainter = SelectionAreaCustomPainter(controller),
         _tmpLinkCustomPainter = TmpLinkCustomPainter(controller),
-        _linksCustomPainter = LinksCustomPainter(controller) {
+        _linksHitTestData = LinksHitTestData() {
+    _staticLinksPainter = StaticLinksPainter(
+      controller,
+      hitTestData: _linksHitTestData,
+    );
+    _activeLinksPainter = ActiveLinksPainter(
+      controller,
+      hitTestData: _linksHitTestData,
+    );
+
     _loadGridShader();
 
     _updateNodes();
@@ -134,7 +143,9 @@ class NodeEditorRenderBox extends RenderBox
   late final StreamSubscription<NodeEditorEvent> _eventSubscription;
 
   void _handleControllerEvent(NodeEditorEvent event) {
-    if (event is! FlPaintEventCat && event is! FlLayoutEventCat) return;
+    if (event is! FlPaintEventCat && event is! FlLayoutEventCat && event is! FlDragProxyEventCat) {
+      return;
+    }
 
     // In the following code we must account for the possibility of events affecting nodes outside the viewport
 
@@ -152,9 +163,13 @@ class NodeEditorRenderBox extends RenderBox
       _selectionAreaPainter.highlightArea = event.area;
     } else if (event is FlDrawTempLinkEvent) {
       _tmpLinkCustomPainter.tmpLinkData = _getTmpLinkData();
-    } else if (event is FlTreeEventCat ||
-        event is FlDragSelectionEvent ||
-        event is FlConfigurationChangeEvent) {
+    } else if (event is FlDragProxyEventCat || event is FlDragSelectionStartEvent) {
+      _applyDragProxyOffsets();
+      markNeedsPaint();
+      return;
+    } else if (event is FlDragSelectionEndEvent || event is FlDragSelectionCommitEvent) {
+      return _updateNodes();
+    } else if (event is FlTreeEventCat || event is FlConfigurationChangeEvent) {
       return _updateNodes(); // This handles marking for layout/paint as needed on its own
     } else if (event is FlNodeSelectionEvent) {
       _childrenNotLaidOut.addAll(event.nodeIds);
@@ -236,7 +251,31 @@ class NodeEditorRenderBox extends RenderBox
 
   final SelectionAreaCustomPainter _selectionAreaPainter;
   final TmpLinkCustomPainter _tmpLinkCustomPainter;
-  final LinksCustomPainter _linksCustomPainter;
+  final LinksHitTestData _linksHitTestData;
+  late final StaticLinksPainter _staticLinksPainter;
+  late final ActiveLinksPainter _activeLinksPainter;
+
+  @visibleForTesting
+  int performLayoutCount = 0;
+
+  /// Applies drag proxy offsets to child parentData without layout.
+  void _applyDragProxyOffsets() {
+    for (final MapEntry<String, Offset> entry in _controller.dragProxyOffsets.entries) {
+      final RenderBox? child = _childrenById[entry.key];
+      if (child == null) continue;
+
+      final childParentData = child.parentData! as _ParentData;
+      final Offset newOffset = entry.value;
+      final Offset delta = newOffset - childParentData.offset;
+
+      if (delta == Offset.zero) continue;
+
+      childParentData.offset = newOffset;
+      if (childParentData.rect != Rect.zero) {
+        childParentData.rect = childParentData.rect.shift(delta);
+      }
+    }
+  }
 
   List<_NodeDiffCheckData> _nodesDiffCheckData = [];
 
@@ -414,6 +453,8 @@ class NodeEditorRenderBox extends RenderBox
 
   @override
   void performLayout() {
+    performLayoutCount++;
+
     // On Flutter Web, opening overlay portals (dialogs, modals, sheets, etc.) triggers
     // a full layout pass rather than a simple repaint, unlike native platforms.
     // This can desynchronize cached layout data inside custom RenderObjects,
@@ -499,11 +540,19 @@ class NodeEditorRenderBox extends RenderBox
 
     _paintGrid(context.canvas, viewport);
 
-    _linksCustomPainter.paint(
+    _staticLinksPainter.paint(
       context.canvas,
       viewport,
       transformChanged: _transformChanged,
       portsChanged: _portsChanged,
+    );
+
+    _activeLinksPainter.paint(
+      context.canvas,
+      viewport,
+      transformChanged: _transformChanged,
+      portsChanged: _portsChanged,
+      proxyChanged: _controller.isDraggingSelection,
     );
 
     _paintChildren(context);
@@ -624,7 +673,7 @@ class NodeEditorRenderBox extends RenderBox
                 style: port.style,
                 orientation: port.prototype.geometricOrientation,
                 isInput: port.prototype is FlDataInputPortPrototype ||
-                         port.prototype is FlControlInputPortPrototype,
+                    port.prototype is FlControlInputPortPrototype,
               ),
             );
           }
@@ -653,7 +702,7 @@ class NodeEditorRenderBox extends RenderBox
                 style: port.style,
                 orientation: port.prototype.geometricOrientation,
                 isInput: port.prototype is FlDataInputPortPrototype ||
-                         port.prototype is FlControlInputPortPrototype,
+                    port.prototype is FlControlInputPortPrototype,
               ),
             );
           }
@@ -973,8 +1022,7 @@ class NodeEditorRenderBox extends RenderBox
   String? _findHitLink(Offset transformedPosition, Rect checkRect) {
     const tolerance = 4.0;
 
-    for (final MapEntry<String, (ui.Rect, ui.Path)> entry
-        in _linksCustomPainter.linksHitTestData.entries) {
+    for (final MapEntry<String, (ui.Rect, ui.Path)> entry in _linksHitTestData.data.entries) {
       final String id = entry.key;
       final (ui.Rect, ui.Path) pathData = entry.value;
 

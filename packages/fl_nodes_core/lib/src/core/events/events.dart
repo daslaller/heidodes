@@ -34,6 +34,9 @@ mixin FlTreeEventCat {}
 mixin FlPaintEventCat {}
 mixin FlLayoutEventCat {}
 
+/// Live drag deltas: paint-only proxy updates (no layout / model commit).
+mixin FlDragProxyEventCat {}
+
 /// ---------------------------------------------------------------------------
 /// Classes (shared data for semantic categories)
 /// ---------------------------------------------------------------------------
@@ -156,8 +159,8 @@ final class FlLinkSelectionEvent extends FlSelectionClassEvent with FlPaintEvent
   });
 }
 
-/// Dragging selection updates positions -> layout (and undoable)
-final class FlDragSelectionStartEvent extends FlGraphEditClassEvent with FlLayoutEventCat {
+/// Drag start: paints proxy setup; layout reserved for commit on end.
+final class FlDragSelectionStartEvent extends FlTempInteractionClassEvent with FlPaintEventCat {
   final Set<String> nodeIds;
   final Offset position;
 
@@ -186,7 +189,9 @@ final class FlDragSelectionStartEvent extends FlGraphEditClassEvent with FlLayou
   }
 }
 
-final class FlDragSelectionEvent extends FlGraphEditClassEvent with FlLayoutEventCat {
+/// Live drag delta: paint-only proxy (not undoable; not layout).
+final class FlDragSelectionEvent extends FlTempInteractionClassEvent
+    with FlDragProxyEventCat, FlPaintEventCat {
   final Set<String> nodeIds;
   final Offset delta;
 
@@ -215,14 +220,17 @@ final class FlDragSelectionEvent extends FlGraphEditClassEvent with FlLayoutEven
   }
 }
 
-final class FlDragSelectionEndEvent extends FlGraphEditClassEvent with FlLayoutEventCat {
+/// Drag end: triggers layout/autosave. Undo uses [FlDragSelectionCommitEvent].
+final class FlDragSelectionEndEvent extends FlTempInteractionClassEvent with FlLayoutEventCat {
   final Offset position;
   final Set<String> nodeIds;
+  final Offset totalDelta;
 
   const FlDragSelectionEndEvent(
     this.position,
     this.nodeIds, {
     required super.id,
+    this.totalDelta = Offset.zero,
     super.isHandled = false,
   });
 
@@ -231,13 +239,51 @@ final class FlDragSelectionEndEvent extends FlGraphEditClassEvent with FlLayoutE
         ...super.toJson(dataHandlers),
         'position': [position.dx, position.dy],
         'nodeIds': nodeIds.toList(),
+        'totalDelta': [totalDelta.dx, totalDelta.dy],
       };
 
   factory FlDragSelectionEndEvent.fromJson(Map<String, dynamic> json) {
     final position = json['position'] as List<dynamic>;
+    final totalDelta = json['totalDelta'] as List<dynamic>?;
     return FlDragSelectionEndEvent(
       Offset((position[0] as num).toDouble(), (position[1] as num).toDouble()),
       (json['nodeIds'] as List).cast<String>().toSet(),
+      id: json['id'] as String,
+      totalDelta: totalDelta == null
+          ? Offset.zero
+          : Offset(
+              (totalDelta[0] as num).toDouble(),
+              (totalDelta[1] as num).toDouble(),
+            ),
+      isHandled: json['isHandled'] as bool,
+    );
+  }
+}
+
+/// Undoable drag commit event (total world delta). Emitted once on drag end.
+final class FlDragSelectionCommitEvent extends FlGraphEditClassEvent with FlLayoutEventCat {
+  final Set<String> nodeIds;
+  final Offset delta;
+
+  const FlDragSelectionCommitEvent(
+    this.nodeIds,
+    this.delta, {
+    required super.id,
+    super.isHandled = false,
+  });
+
+  @override
+  Map<String, dynamic> toJson(Map<Type, DataHandler> dataHandlers) => {
+        ...super.toJson(dataHandlers),
+        'nodeIds': nodeIds.toList(),
+        'delta': [delta.dx, delta.dy],
+      };
+
+  factory FlDragSelectionCommitEvent.fromJson(Map<String, dynamic> json) {
+    final delta = json['delta'] as List<dynamic>;
+    return FlDragSelectionCommitEvent(
+      (json['nodeIds'] as List).cast<String>().toSet(),
+      Offset((delta[0] as num).toDouble(), (delta[1] as num).toDouble()),
       id: json['id'] as String,
       isHandled: json['isHandled'] as bool,
     );
@@ -616,6 +662,19 @@ final class FlDrawTempLinkEvent extends FlTempInteractionClassEvent with FlPaint
   const FlDrawTempLinkEvent(
     this.startOffset,
     this.endOffset, {
+    required super.id,
+    super.isHandled = false,
+  });
+}
+
+/// Active-links ticker frame — paint only; must never set linksDataDirty.
+final class FlActiveLinksTickEvent extends FlTempInteractionClassEvent with FlPaintEventCat {
+  const FlActiveLinksTickEvent({required super.id, super.isHandled = false});
+}
+
+/// Active-links membership changed (static tier must recompute once).
+final class FlActiveLinksMembershipEvent extends FlTempInteractionClassEvent with FlPaintEventCat {
+  const FlActiveLinksMembershipEvent({
     required super.id,
     super.isHandled = false,
   });

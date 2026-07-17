@@ -67,6 +67,10 @@ class FlNodesController with ChangeNotifier {
     overlay.clear();
     eventBus.close();
 
+    _stopActiveLinksTicker();
+    _activeLinksAnimController?.dispose();
+    _activeLinksAnimController = null;
+
     clear();
 
     super.dispose();
@@ -79,6 +83,13 @@ class FlNodesController with ChangeNotifier {
     selectedLinkIds.clear();
 
     unboundNodeOffsets.clear();
+    dragProxyOffsets.clear();
+    activeLinkIds.clear();
+    _effectLinkIds.clear();
+    _dragActiveLinkIds.clear();
+    _isDraggingSelection = false;
+    _dragTotalDelta = Offset.zero;
+    _stopActiveLinksTicker();
 
     linksDataDirty = true;
     nodesDataDirty = true;
@@ -108,6 +119,12 @@ class FlNodesController with ChangeNotifier {
   late Animation<Offset> _viewportOffsetAnim;
   late Animation<double> _viewportZoomAnim;
 
+  AnimationController? _activeLinksAnimController;
+  bool _activeLinksTickerRunning = false;
+
+  /// Animation value for [ActiveLinksPainter] effects (0..1 repeating).
+  double get activeLinksAnimationValue => _activeLinksAnimController?.value ?? 0.0;
+
   void setTickerProvider(TickerProvider tickerProvider) {
     _tickerProvider = tickerProvider;
 
@@ -117,6 +134,45 @@ class FlNodesController with ChangeNotifier {
     _viewportZoomAnimController = AnimationController(
       vsync: _tickerProvider!,
     );
+
+    _activeLinksAnimController = AnimationController(
+      vsync: _tickerProvider!,
+      duration: const Duration(seconds: 1),
+    )..addListener(_onActiveLinksTick);
+
+    if (activeLinkIds.isNotEmpty) {
+      _startActiveLinksTicker();
+    }
+  }
+
+  void _onActiveLinksTick() {
+    // Paint-only: never set linksDataDirty from the ticker.
+    eventBus.emit(
+      FlActiveLinksTickEvent(id: const Uuid().v4()),
+    );
+  }
+
+  void _startActiveLinksTicker() {
+    final AnimationController? controller = _activeLinksAnimController;
+    if (controller == null || _activeLinksTickerRunning) return;
+    _activeLinksTickerRunning = true;
+    controller.repeat();
+  }
+
+  void _stopActiveLinksTicker() {
+    final AnimationController? controller = _activeLinksAnimController;
+    if (controller == null || !_activeLinksTickerRunning) return;
+    _activeLinksTickerRunning = false;
+    controller.stop();
+    controller.value = 0.0;
+  }
+
+  void _syncActiveLinksTicker() {
+    if (activeLinkIds.isEmpty) {
+      _stopActiveLinksTicker();
+    } else {
+      _startActiveLinksTicker();
+    }
   }
 
   ////////////////////////////////////////////////////////////////////////////////
@@ -422,6 +478,77 @@ class FlNodesController with ChangeNotifier {
 
   /// This map holds the raw nodes offsets before they are snapped to the grid.
   final Map<String, Offset> unboundNodeOffsets = {};
+
+  /// Live drag paint offsets (committed to [node.offset] only on drag end).
+  final Map<String, Offset> dragProxyOffsets = {};
+
+  /// Links currently painted by the active tier (effects and/or drag-tracked).
+  final Set<String> activeLinkIds = {};
+
+  /// Links kept active because they have an assigned [FlLinkEffect].
+  final Set<String> _effectLinkIds = {};
+
+  /// Links kept active only for the duration of a selection drag.
+  final Set<String> _dragActiveLinkIds = {};
+
+  bool _isDraggingSelection = false;
+  Offset _dragTotalDelta = Offset.zero;
+  bool get isDraggingSelection => _isDraggingSelection;
+
+  /// Resolved paint position: proxy during drag, else committed [FlNodeDataModel.offset].
+  Offset nodePaintOffset(String nodeId) {
+    final Offset? proxy = dragProxyOffsets[nodeId];
+    if (proxy != null) return proxy;
+    return nodes[nodeId]?.offset ?? Offset.zero;
+  }
+
+  /// Registers [linkId] as effect-driven on the active tier.
+  void setLinkEffect(String linkId, {required bool enabled}) {
+    if (!links.containsKey(linkId)) return;
+
+    if (enabled) {
+      _effectLinkIds.add(linkId);
+    } else {
+      _effectLinkIds.remove(linkId);
+    }
+    _rebuildActiveLinkIds();
+    linksDataDirty = true;
+    eventBus.emit(FlActiveLinksMembershipEvent(id: const Uuid().v4()));
+  }
+
+  void addActiveLinks(Iterable<String> linkIds) {
+    var changed = false;
+    for (final id in linkIds) {
+      if (activeLinkIds.add(id)) changed = true;
+    }
+    if (changed) {
+      _syncActiveLinksTicker();
+      linksDataDirty = true;
+      eventBus.emit(FlActiveLinksMembershipEvent(id: const Uuid().v4()));
+    }
+  }
+
+  void removeActiveLinks(Iterable<String> linkIds) {
+    var changed = false;
+    for (final id in linkIds) {
+      if (_effectLinkIds.contains(id)) continue;
+      if (activeLinkIds.remove(id)) changed = true;
+      _dragActiveLinkIds.remove(id);
+    }
+    if (changed) {
+      _syncActiveLinksTicker();
+      linksDataDirty = true;
+      eventBus.emit(FlActiveLinksMembershipEvent(id: const Uuid().v4()));
+    }
+  }
+
+  void _rebuildActiveLinkIds() {
+    activeLinkIds
+      ..clear()
+      ..addAll(_effectLinkIds)
+      ..addAll(_dragActiveLinkIds);
+    _syncActiveLinksTicker();
+  }
 
   bool isNodePresent(String id) => nodes.containsKey(id);
 
@@ -756,6 +883,12 @@ class FlNodesController with ChangeNotifier {
 
     links.remove(id);
 
+    _effectLinkIds.remove(id);
+    _dragActiveLinkIds.remove(id);
+    if (activeLinkIds.remove(id)) {
+      _syncActiveLinksTicker();
+    }
+
     // selectedLinkIds.remove(id); We don't remove the link from the selected links because you might be iterating over them.
 
     linksDataDirty = true;
@@ -938,9 +1071,39 @@ class FlNodesController with ChangeNotifier {
   Rect? _highlightArea;
   Rect? get highlightArea => _highlightArea;
 
-  /// This method is used to drag the selected nodes by a given delta affecting their offsets.
+  /// Begins a paint-only selection drag (proxy offsets; no model commit).
+  void beginDragSelection(Offset position, {String? eventId}) {
+    if (selectedNodeIds.isEmpty || _isDraggingSelection) return;
+
+    _isDraggingSelection = true;
+    _dragTotalDelta = Offset.zero;
+
+    for (final String id in selectedNodeIds) {
+      final FlNodeDataModel node = nodes[id]!;
+      unboundNodeOffsets.putIfAbsent(id, () => node.offset);
+      dragProxyOffsets[id] = unboundNodeOffsets[id]!;
+    }
+
+    _dragActiveLinkIds
+      ..clear()
+      ..addAll(FlNodesUtils.getConnectedLinkIds(selectedNodeIds, nodes));
+    _rebuildActiveLinkIds();
+
+    // Membership change needs static tier to drop drag-tracked links once.
+    linksDataDirty = true;
+
+    eventBus.emit(
+      FlDragSelectionStartEvent(
+        selectedNodeIds.toSet(),
+        position,
+        id: eventId ?? const Uuid().v4(),
+      ),
+    );
+  }
+
+  /// Live drag delta: updates proxy offsets only (paint path).
   ///
-  /// Emits a [FlDragSelectionEvent] event.
+  /// When not in an active drag (e.g. undo/redo), commits immediately.
   void dragSelection(
     Offset delta, {
     String? eventId,
@@ -949,33 +1112,121 @@ class FlNodesController with ChangeNotifier {
   }) {
     if (selectedNodeIds.isEmpty) return;
 
-    // If the delta is not already in world coordinates,
-    // convert it by dividing by the viewport zoom.
     final Offset effectiveDelta = isWorldDelta ? delta : delta / viewportZoom;
+
+    if (!_isDraggingSelection) {
+      _commitSelectionDelta(
+        effectiveDelta,
+        eventId: eventId,
+        resetUnboundOffset: resetUnboundOffset,
+      );
+      return;
+    }
 
     for (final String id in selectedNodeIds) {
       final FlNodeDataModel node = nodes[id]!;
 
-      // Reset the unbound offset if requested (e.g. during undo/redo)
       if (resetUnboundOffset) {
         unboundNodeOffsets[id] = node.offset;
       } else {
         unboundNodeOffsets.putIfAbsent(id, () => node.offset);
       }
 
-      // Update the unbound offset by adding the effective delta.
       unboundNodeOffsets[id] = unboundNodeOffsets[id]! + effectiveDelta;
 
       if (config.enableSnapToGrid) {
         final Offset unboundOffset = unboundNodeOffsets[id]!;
+        dragProxyOffsets[id] = Offset(
+          (unboundOffset.dx / config.snapToGridSize).round() * config.snapToGridSize,
+          (unboundOffset.dy / config.snapToGridSize).round() * config.snapToGridSize,
+        );
+      } else {
+        dragProxyOffsets[id] = unboundNodeOffsets[id]!;
+      }
+    }
 
-        // Snap the node's offset to the grid using rounding.
+    _dragTotalDelta += effectiveDelta;
+
+    eventBus.emit(
+      FlDragSelectionEvent(
+        id: eventId ?? const Uuid().v4(),
+        selectedNodeIds.toSet(),
+        effectiveDelta,
+      ),
+    );
+  }
+
+  /// Commits proxy offsets into the model and ends the drag.
+  void endDragSelection(Offset position, {String? eventId}) {
+    if (!_isDraggingSelection) return;
+
+    final Set<String> nodeIds = selectedNodeIds.toSet();
+    final Offset totalDelta = _dragTotalDelta;
+    final String commitId = eventId ?? const Uuid().v4();
+
+    for (final String id in nodeIds) {
+      final FlNodeDataModel? node = nodes[id];
+      if (node == null) continue;
+
+      final Offset? proxy = dragProxyOffsets[id];
+      if (proxy != null) {
+        node.offset = proxy;
+      }
+    }
+
+    dragProxyOffsets.clear();
+    _dragActiveLinkIds.clear();
+    _rebuildActiveLinkIds();
+    _isDraggingSelection = false;
+    _dragTotalDelta = Offset.zero;
+
+    linksDataDirty = true;
+    nodesDataDirty = true;
+
+    eventBus.emit(
+      FlDragSelectionEndEvent(
+        position,
+        nodeIds,
+        id: commitId,
+        totalDelta: totalDelta,
+      ),
+    );
+
+    if (totalDelta != Offset.zero) {
+      eventBus.emit(
+        FlDragSelectionCommitEvent(
+          nodeIds,
+          totalDelta,
+          id: commitId,
+        ),
+      );
+    }
+  }
+
+  /// Immediate model commit (undo/redo or non-gesture callers).
+  void _commitSelectionDelta(
+    Offset effectiveDelta, {
+    String? eventId,
+    bool resetUnboundOffset = false,
+  }) {
+    for (final String id in selectedNodeIds) {
+      final FlNodeDataModel node = nodes[id]!;
+
+      if (resetUnboundOffset) {
+        unboundNodeOffsets[id] = node.offset;
+      } else {
+        unboundNodeOffsets.putIfAbsent(id, () => node.offset);
+      }
+
+      unboundNodeOffsets[id] = unboundNodeOffsets[id]! + effectiveDelta;
+
+      if (config.enableSnapToGrid) {
+        final Offset unboundOffset = unboundNodeOffsets[id]!;
         node.offset = Offset(
           (unboundOffset.dx / config.snapToGridSize).round() * config.snapToGridSize,
           (unboundOffset.dy / config.snapToGridSize).round() * config.snapToGridSize,
         );
       } else {
-        // Apply the effective delta directly to the node's offset.
         node.offset += effectiveDelta;
       }
     }
@@ -983,12 +1234,11 @@ class FlNodesController with ChangeNotifier {
     linksDataDirty = true;
     nodesDataDirty = true;
 
-    // Emit a DragSelectionEvent with the effective delta (in world coordinates).
     eventBus.emit(
-      FlDragSelectionEvent(
-        id: eventId ?? const Uuid().v4(),
+      FlDragSelectionCommitEvent(
         selectedNodeIds.toSet(),
         effectiveDelta,
+        id: eventId ?? const Uuid().v4(),
       ),
     );
   }

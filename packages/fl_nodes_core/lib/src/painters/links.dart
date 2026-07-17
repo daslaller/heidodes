@@ -1,19 +1,93 @@
+import 'package:fl_nodes_core/src/core/controller/core.dart';
 import 'package:fl_nodes_core/src/core/models/data.dart';
-import 'package:fl_nodes_core/src/core/utils/rendering/paths.dart';
+import 'package:fl_nodes_core/src/core/models/paint.dart';
 import 'package:fl_nodes_core/src/painters/custom_painter.dart';
+import 'package:fl_nodes_core/src/painters/link_path_builder.dart';
 import 'package:fl_nodes_core/src/styles/styles.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
-class LinksCustomPainter extends FlCustomPainter {
+/// Shared hit-test path cache for static + active link painters.
+class LinksHitTestData {
+  final Map<String, (Rect, Path)> data = {};
+
+  void clear() => data.clear();
+
+  void removeIds(Iterable<String> ids) {
+    for (final id in ids) {
+      data.remove(id);
+    }
+  }
+
+  void put(String linkId, Path path) {
+    data[linkId] = (path.getBounds(), path);
+  }
+
+  Offset? getLinkLabelCenter(String linkId) => data[linkId]?.$1.center;
+}
+
+LinkPaintModel? buildLinkPaintModel({
+  required FlNodesController controller,
+  required FlLinkDataModel link,
+  required Rect viewport,
+  required bool shouldDrawLabels,
+}) {
+  final FlNodeDataModel? node1 = controller.getNodeById(link.ports.$1.nodeId);
+  final FlNodeDataModel? node2 = controller.getNodeById(link.ports.$2.nodeId);
+  if (node1 == null || node2 == null) return null;
+
+  final FlPortDataModel? port1 = node1.ports[link.ports.$1.portId];
+  final FlPortDataModel? port2 = node2.ports[link.ports.$2.portId];
+  if (port1 == null || port2 == null) return null;
+
+  final Offset outPortOffset = controller.nodePaintOffset(link.ports.$1.nodeId) + port1.offset;
+  final Offset inPortOffset = controller.nodePaintOffset(link.ports.$2.nodeId) + port2.offset;
+
+  final Rect pathBounds = Rect.fromPoints(outPortOffset, inPortOffset);
+  if (!viewport.overlaps(pathBounds)) return null;
+
+  final FlLinkStyle linkStyle = port1.style.linkStyleBuilder(link.state);
+
+  String? labelText;
+  Rect? fromNodeBounds;
+  Rect? toNodeBounds;
+
+  if (shouldDrawLabels) {
+    final BuildContext? context = controller.editorKey.currentContext;
+    if (context != null) {
+      labelText = port1.prototype.linkPrototype.label(context);
+
+      if (labelText.isNotEmpty) {
+        fromNodeBounds = node1.cachedRenderboxRect;
+        toNodeBounds = node2.cachedRenderboxRect;
+      }
+    }
+  }
+
+  return LinkPaintModel(
+    linkId: link.id,
+    outPortOffset: outPortOffset,
+    inPortOffset: inPortOffset,
+    outPortGeometricOrientation: port1.prototype.geometricOrientation,
+    inPortGeometricOrientation: port2.prototype.geometricOrientation,
+    linkStyle: linkStyle,
+    labelText: labelText,
+    fromNodeBounds: fromNodeBounds,
+    toNodeBounds: toNodeBounds,
+  );
+}
+
+/// Static (batched) links — excludes [FlNodesController.activeLinkIds].
+class StaticLinksPainter extends FlCustomPainter {
   final List<(Path, Paint)> _unbatchableLinks = [];
   final Map<FlLinkStyle, (Path, Paint)> _solidColorLinkBatches = {};
-
-  final Map<String, (Rect, Path)> linksHitTestData = {};
-
-  // Map to cache text painters for link labels
+  final LinksHitTestData hitTestData;
   final Map<String, TextPainter> _labelTextPainters = {};
 
-  LinksCustomPainter(super.controller);
+  @visibleForTesting
+  int staticLinkRecomputeCount = 0;
+
+  StaticLinksPainter(super.controller, {required this.hitTestData});
 
   @override
   void paint(
@@ -24,74 +98,42 @@ class LinksCustomPainter extends FlCustomPainter {
   }) {
     final bool shouldDrawLabels = controller.lodLevel >= 3;
 
-    if (controller.linksDataDirty ||
-        controller.nodesDataDirty ||
-        transformChanged ||
-        portsChanged) {
+    // Skip nodesDataDirty during proxy drag — active tier owns those links.
+    final bool nodesMovedOutsideDrag = controller.nodesDataDirty && !controller.isDraggingSelection;
+
+    if (controller.linksDataDirty || nodesMovedOutsideDrag || transformChanged || portsChanged) {
+      staticLinkRecomputeCount++;
+
       final List<LinkPaintModel> linkDrawData = [];
 
       _unbatchableLinks.clear();
       _solidColorLinkBatches.clear();
-      linksHitTestData.clear();
+
+      final Set<String> activeIds = controller.activeLinkIds;
+      final List<String> staticIdsToClear =
+          hitTestData.data.keys.where((id) => !activeIds.contains(id)).toList();
+      hitTestData.removeIds(staticIdsToClear);
 
       if (controller.linksDataDirty) {
         _labelTextPainters.clear();
       }
 
       for (final FlLinkDataModel link in controller.links.values) {
-        final FlNodeDataModel? node1 = controller.getNodeById(link.ports.$1.nodeId);
-        final FlNodeDataModel? node2 = controller.getNodeById(link.ports.$2.nodeId);
-        if (node1 == null || node2 == null) continue;
+        if (activeIds.contains(link.id)) continue;
 
-        final FlPortDataModel? port1 = node1.ports[link.ports.$1.portId];
-        final FlPortDataModel? port2 = node2.ports[link.ports.$2.portId];
-        if (port1 == null || port2 == null) continue;
-
-        final Offset outPortOffset = node1.offset + port1.offset;
-        final Offset inPortOffset = node2.offset + port2.offset;
-        final FlPortGeometricOrientation outPortGeometricOrientation =
-            port1.prototype.geometricOrientation;
-        final FlPortGeometricOrientation inPortGeometricOrientation =
-            port2.prototype.geometricOrientation;
-
-        final Rect pathBounds = Rect.fromPoints(outPortOffset, inPortOffset);
-
-        if (!viewport.overlaps(pathBounds)) continue;
-
-        final FlLinkStyle linkStyle = port1.style.linkStyleBuilder(link.state);
-
-        String? labelText;
-        Rect? fromNodeBounds;
-        Rect? toNodeBounds;
-
-        if (shouldDrawLabels) {
-          labelText = port1.prototype.linkPrototype.label(controller.editorKey.currentContext!);
-
-          if (labelText.isNotEmpty) {
-            fromNodeBounds = node1.cachedRenderboxRect;
-            toNodeBounds = node2.cachedRenderboxRect;
-          }
-        }
-
-        linkDrawData.add(
-          LinkPaintModel(
-            linkId: link.id,
-            outPortOffset: outPortOffset,
-            inPortOffset: inPortOffset,
-            outPortGeometricOrientation: outPortGeometricOrientation,
-            inPortGeometricOrientation: inPortGeometricOrientation,
-            linkStyle: linkStyle,
-            labelText: labelText,
-            fromNodeBounds: fromNodeBounds,
-            toNodeBounds: toNodeBounds,
-          ),
+        final LinkPaintModel? data = buildLinkPaintModel(
+          controller: controller,
+          link: link,
+          viewport: viewport,
+          shouldDrawLabels: shouldDrawLabels,
         );
+        if (data == null) continue;
+        linkDrawData.add(data);
       }
 
       for (final data in linkDrawData) {
-        final Path path = _computeLinkPath(data.linkStyle.curveType, data);
-
-        linksHitTestData[data.linkId] = (path.getBounds(), path);
+        final Path path = LinkPathBuilder.compute(data);
+        hitTestData.put(data.linkId, path);
 
         if (data.linkStyle.gradient != null) {
           final Shader shader = data.linkStyle.gradient!.createShader(
@@ -104,10 +146,6 @@ class LinksCustomPainter extends FlCustomPainter {
             ..strokeWidth = data.linkStyle.lineWidth;
 
           _unbatchableLinks.add((path, paint));
-
-          if (shouldDrawLabels && data.labelText != null && data.labelText!.isNotEmpty) {
-            _cacheTextPainter(data.linkId, data.labelText!);
-          }
         } else {
           final FlLinkStyle style = data.linkStyle;
           _solidColorLinkBatches.putIfAbsent(
@@ -122,10 +160,10 @@ class LinksCustomPainter extends FlCustomPainter {
           );
 
           _solidColorLinkBatches[style]!.$1.addPath(path, Offset.zero);
+        }
 
-          if (shouldDrawLabels && data.labelText != null && data.labelText!.isNotEmpty) {
-            _cacheTextPainter(data.linkId, data.labelText!);
-          }
+        if (shouldDrawLabels && data.labelText != null && data.labelText!.isNotEmpty) {
+          _cacheTextPainter(data.linkId, data.labelText!);
         }
       }
     }
@@ -148,25 +186,6 @@ class LinksCustomPainter extends FlCustomPainter {
     canvas.restore();
   }
 
-  Path _computeLinkPath(FlLinkCurveType curveType, LinkPaintModel data) => switch (curveType) {
-        FlLinkCurveType.straight => PathUtils.computeStraightLinkPath(
-            outPortOffset: data.outPortOffset,
-            inPortOffset: data.inPortOffset,
-          ),
-        FlLinkCurveType.bezier => PathUtils.computeBezierLinkPath(
-            outPortOffset: data.outPortOffset,
-            inPortOffset: data.inPortOffset,
-            outPortGeometricOrientation: data.outPortGeometricOrientation,
-            inPortGeometricOrientation: data.inPortGeometricOrientation,
-          ),
-        FlLinkCurveType.ninetyDegree => PathUtils.computeNinetyDegreesLinkPath(
-            outPortOffset: data.outPortOffset,
-            inPortOffset: data.inPortOffset,
-            outPortGeometricOrientation: data.outPortGeometricOrientation,
-            inPortGeometricOrientation: data.inPortGeometricOrientation,
-          ),
-      };
-
   void _cacheTextPainter(String linkId, String labelText) {
     if (_labelTextPainters.containsKey(linkId)) return;
 
@@ -185,7 +204,6 @@ class LinksCustomPainter extends FlCustomPainter {
     );
 
     textPainter.layout();
-
     _labelTextPainters[linkId] = textPainter;
   }
 
@@ -194,10 +212,11 @@ class LinksCustomPainter extends FlCustomPainter {
     const padding = 4.0;
     final clearPaint = Paint()..blendMode = BlendMode.clear;
 
-    for (final MapEntry<String, (Rect, Path)> entry in linksHitTestData.entries) {
+    for (final MapEntry<String, (Rect, Path)> entry in hitTestData.data.entries) {
       final String id = entry.key;
-      final Rect pathData = entry.value.$1;
+      if (controller.activeLinkIds.contains(id)) continue;
 
+      final Rect pathData = entry.value.$1;
       final TextPainter? textPainter = _labelTextPainters[id];
       if (textPainter == null) continue;
 
@@ -212,22 +231,17 @@ class LinksCustomPainter extends FlCustomPainter {
       final Rect toNodeBounds = toNode.cachedRenderboxRect;
       final Offset center = pathData.center;
 
-      // Define the rect that the label would occupy (with margin)
       final textRect = Rect.fromCenter(
         center: center,
         width: textPainter.width + margin,
         height: textPainter.height + margin,
       );
 
-      // Detect overlap with either node
       final bool overlapsNode = fromNodeBounds.inflate(margin).overlaps(textRect) ||
           toNodeBounds.inflate(margin).overlaps(textRect);
 
-      if (overlapsNode) {
-        continue;
-      }
+      if (overlapsNode) continue;
 
-      // Offset to center text at path center
       final offset = Offset(
         center.dx - textPainter.width / 2,
         center.dy - textPainter.height / 2,
@@ -240,15 +254,85 @@ class LinksCustomPainter extends FlCustomPainter {
         textPainter.height + padding * 2,
       );
 
-      // Clear underlying link segment for better readability
       canvas.drawRect(labelRect, clearPaint);
-
       textPainter.paint(canvas, offset);
     }
   }
+}
 
-  Offset? getLinkLabelCenter(String linkId) {
-    final Rect? pathData = linksHitTestData[linkId]?.$1;
-    return pathData?.center;
+/// Active links (effects + drag-tracked) — recomputed independently of the static tier.
+class ActiveLinksPainter extends FlCustomPainter {
+  final LinksHitTestData hitTestData;
+  final List<(Path, Paint, FlLinkStyle)> _drawnLinks = [];
+
+  ActiveLinksPainter(super.controller, {required this.hitTestData});
+
+  @override
+  void paint(
+    Canvas canvas,
+    Rect viewport, {
+    bool transformChanged = false,
+    bool portsChanged = false,
+    bool proxyChanged = false,
+  }) {
+    final Set<String> activeIds = controller.activeLinkIds;
+    if (activeIds.isEmpty) {
+      _drawnLinks.clear();
+      return;
+    }
+
+    final bool shouldDrawLabels = controller.lodLevel >= 3;
+
+    // Active tier always rebuilds its small membership set each paint.
+    _drawnLinks.clear();
+    hitTestData.removeIds(activeIds);
+
+    for (final String linkId in activeIds) {
+      final FlLinkDataModel? link = controller.links[linkId];
+      if (link == null) continue;
+
+      final LinkPaintModel? data = buildLinkPaintModel(
+        controller: controller,
+        link: link,
+        viewport: viewport,
+        shouldDrawLabels: shouldDrawLabels,
+      );
+      if (data == null) continue;
+
+      final Path path = LinkPathBuilder.compute(data);
+      hitTestData.put(data.linkId, path);
+
+      final Paint paint;
+      if (data.linkStyle.gradient != null) {
+        final Shader shader = data.linkStyle.gradient!.createShader(
+          Rect.fromPoints(data.outPortOffset, data.inPortOffset),
+        );
+        paint = Paint()
+          ..shader = shader
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = data.linkStyle.lineWidth;
+      } else {
+        paint = Paint()
+          ..color = data.linkStyle.color ?? const Color(0xFF42A5F5)
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = data.linkStyle.lineWidth;
+      }
+
+      _drawnLinks.add((path, paint, data.linkStyle));
+    }
+
+    final double animationValue = controller.activeLinksAnimationValue;
+
+    for (final (path, paint, style) in _drawnLinks) {
+      final FlLinkEffect? effect = style.effect;
+      if (effect != null) {
+        effect.paint(canvas, path, paint, animationValue);
+      } else {
+        canvas.drawPath(path, paint);
+      }
+    }
   }
 }
+
+/// Backward-compatible alias during migration.
+typedef LinksCustomPainter = StaticLinksPainter;

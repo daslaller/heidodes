@@ -42,7 +42,8 @@ class _HierarchyWidgetState extends State<HierarchyWidget> {
       if (event.isHandled) return;
 
       if (event is FlNodeSelectionEvent ||
-          event is FlDragSelectionEvent ||
+          event is FlDragSelectionCommitEvent ||
+          event is FlDragSelectionEndEvent ||
           event is FlAddNodeEvent ||
           event is FlRemoveNodeEvent ||
           event is FlLoadProjectEvent ||
