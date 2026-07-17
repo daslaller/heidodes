@@ -727,11 +727,6 @@ class NodeEditorRenderBox extends RenderBox
           _tmpLinkCustomPainter.paint(ctx.canvas, viewport);
 
           _selectionAreaPainter.paint(ctx.canvas, viewport);
-
-          if (kDebugMode) {
-            paintDebugViewport(ctx.canvas, viewport);
-            paintDebugOffset(ctx.canvas, size);
-          }
         });
       },
     );
