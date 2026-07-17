@@ -68,8 +68,8 @@ class FlNodesController with ChangeNotifier {
     eventBus.close();
 
     _stopActiveLinksTicker();
-    _activeLinksAnimController?.dispose();
-    _activeLinksAnimController = null;
+    _activeLinksTicker?.dispose();
+    _activeLinksTicker = null;
 
     clear();
 
@@ -119,11 +119,16 @@ class FlNodesController with ChangeNotifier {
   late Animation<Offset> _viewportOffsetAnim;
   late Animation<double> _viewportZoomAnim;
 
-  AnimationController? _activeLinksAnimController;
+  Ticker? _activeLinksTicker;
   bool _activeLinksTickerRunning = false;
+  Duration _activeLinksElapsed = Duration.zero;
 
-  /// Animation value for [ActiveLinksPainter] effects (0..1 repeating).
-  double get activeLinksAnimationValue => _activeLinksAnimController?.value ?? 0.0;
+  /// Continuous seconds for [ActiveLinksPainter] effects (does not reset).
+  ///
+  /// Driven by a [Ticker] elapsed time — not [AnimationController.value],
+  /// which jumps 1→0 on [AnimationController.repeat] and makes dashes blink.
+  double get activeLinksAnimationValue =>
+      _activeLinksElapsed.inMicroseconds / 1e6;
 
   void setTickerProvider(TickerProvider tickerProvider) {
     _tickerProvider = tickerProvider;
@@ -135,17 +140,13 @@ class FlNodesController with ChangeNotifier {
       vsync: _tickerProvider!,
     );
 
-    _activeLinksAnimController = AnimationController(
-      vsync: _tickerProvider!,
-      duration: const Duration(seconds: 1),
-    )..addListener(_onActiveLinksTick);
-
     if (activeLinkIds.isNotEmpty) {
       _startActiveLinksTicker();
     }
   }
 
-  void _onActiveLinksTick() {
+  void _onActiveLinksTick(Duration elapsed) {
+    _activeLinksElapsed = elapsed;
     // Paint-only: never set linksDataDirty from the ticker.
     eventBus.emit(
       FlActiveLinksTickEvent(id: const Uuid().v4()),
@@ -153,18 +154,19 @@ class FlNodesController with ChangeNotifier {
   }
 
   void _startActiveLinksTicker() {
-    final AnimationController? controller = _activeLinksAnimController;
-    if (controller == null || _activeLinksTickerRunning) return;
+    final TickerProvider? vsync = _tickerProvider;
+    if (vsync == null || _activeLinksTickerRunning) return;
     _activeLinksTickerRunning = true;
-    controller.repeat();
+    _activeLinksTicker ??= vsync.createTicker(_onActiveLinksTick);
+    _activeLinksElapsed = Duration.zero;
+    _activeLinksTicker!.start();
   }
 
   void _stopActiveLinksTicker() {
-    final AnimationController? controller = _activeLinksAnimController;
-    if (controller == null || !_activeLinksTickerRunning) return;
+    if (!_activeLinksTickerRunning) return;
     _activeLinksTickerRunning = false;
-    controller.stop();
-    controller.value = 0.0;
+    _activeLinksTicker?.stop();
+    _activeLinksElapsed = Duration.zero;
   }
 
   void _syncActiveLinksTicker() {

@@ -31,6 +31,8 @@ class FlowingDashEffect implements FlLinkEffect {
     final double patternLength = dashLength + gapLength;
     if (patternLength <= 0) return;
 
+    // [animationValue] is continuous seconds (not a 0..1 loop) so phase
+    // never jumps when the ticker repeats.
     final double phase = (animationValue * speed * patternLength) % patternLength;
 
     final Paint effectPaint = Paint()
