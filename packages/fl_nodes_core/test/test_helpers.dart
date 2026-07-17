@@ -70,6 +70,9 @@ FlNodesController createTestController({bool snapToGrid = false}) {
       'test.node',
       offset: Offset(i * 200.0, 0),
     );
+    // RenderBox.insert reads builtStyle; normally FlBaseNodeWidget sets this.
+    node.builtStyle = node.prototype.styleBuilder(node.state);
+    node.builtHeaderStyle = node.prototype.headerStyleBuilder(node.state);
     nodeIds.add(node.id);
     // Give ports non-zero offsets so link paths are non-degenerate.
     node.ports['out']!.offset = const Offset(100, 40);

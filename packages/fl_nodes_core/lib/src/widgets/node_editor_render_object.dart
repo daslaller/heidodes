@@ -167,7 +167,14 @@ class NodeEditorRenderBox extends RenderBox
       _applyDragProxyOffsets();
       markNeedsPaint();
       return;
-    } else if (event is FlDragSelectionEndEvent || event is FlDragSelectionCommitEvent) {
+    } else if (event is FlDragSelectionEndEvent) {
+      // Proxy already moved parentData.offset; still run a bounded layout so
+      // spatial-hash + cachedRenderboxRect stay in sync with the commit.
+      _childrenNotLaidOut.addAll(event.nodeIds);
+      markNeedsLayout();
+      return;
+    } else if (event is FlDragSelectionCommitEvent) {
+      // Gesture path: End already scheduled layout. Undo/redo emits Commit only.
       return _updateNodes();
     } else if (event is FlTreeEventCat || event is FlConfigurationChangeEvent) {
       return _updateNodes(); // This handles marking for layout/paint as needed on its own
