@@ -53,6 +53,66 @@ class _ParentData extends ContainerBoxParentData<RenderBox> {
   Rect rect = Rect.zero;
 }
 
+/// Compositor-isolated link tier. Own [isRepaintBoundary] so static links are
+/// not re-recorded while only the active tier animates or tracks a drag.
+class _LinksLayerRenderBox extends RenderBox {
+  _LinksLayerRenderBox({required this.paintLinks});
+
+  final void Function(
+    PaintingContext context,
+    Offset offset,
+    Rect viewport, {
+    required bool transformChanged,
+    required bool portsChanged,
+  }) paintLinks;
+
+  Rect viewport = Rect.zero;
+  bool transformChanged = false;
+  bool portsChanged = false;
+
+  @visibleForTesting
+  int paintCount = 0;
+
+  void configure({
+    required Rect viewport,
+    required bool transformChanged,
+    required bool portsChanged,
+  }) {
+    this.viewport = viewport;
+    this.transformChanged = transformChanged;
+    this.portsChanged = portsChanged;
+  }
+
+  @override
+  bool get isRepaintBoundary => true;
+
+  @override
+  bool get sizedByParent => true;
+
+  @override
+  Size computeDryLayout(BoxConstraints constraints) => constraints.biggest;
+
+  @override
+  void performResize() {
+    size = constraints.biggest;
+  }
+
+  @override
+  bool hitTest(BoxHitTestResult result, {required Offset position}) => false;
+
+  @override
+  void paint(PaintingContext context, Offset offset) {
+    paintCount++;
+    paintLinks(
+      context,
+      offset,
+      viewport,
+      transformChanged: transformChanged,
+      portsChanged: portsChanged,
+    );
+  }
+}
+
 class NodeEditorRenderObjectWidget extends MultiChildRenderObjectWidget {
   final FlNodesController controller;
   final FragmentShader gridShader;
@@ -130,6 +190,42 @@ class NodeEditorRenderBox extends RenderBox
       hitTestData: _linksHitTestData,
     );
 
+    _staticLinksLayer = _LinksLayerRenderBox(
+      paintLinks: (
+        PaintingContext context,
+        Offset offset,
+        Rect viewport, {
+        required bool transformChanged,
+        required bool portsChanged,
+      }) {
+        _staticLinksPainter.paint(
+          context.canvas,
+          viewport,
+          transformChanged: transformChanged,
+          portsChanged: portsChanged,
+        );
+      },
+    );
+    _activeLinksLayer = _LinksLayerRenderBox(
+      paintLinks: (
+        PaintingContext context,
+        Offset offset,
+        Rect viewport, {
+        required bool transformChanged,
+        required bool portsChanged,
+      }) {
+        _activeLinksPainter.paint(
+          context.canvas,
+          viewport,
+          transformChanged: transformChanged,
+          portsChanged: portsChanged,
+          proxyChanged: _controller.isDraggingSelection,
+        );
+      },
+    );
+    adoptChild(_staticLinksLayer);
+    adoptChild(_activeLinksLayer);
+
     _loadGridShader();
 
     _updateNodes();
@@ -156,27 +252,47 @@ class NodeEditorRenderBox extends RenderBox
     if (event is FlViewportOffsetEvent) {
       _offset = event.offset;
       _transformChanged = true;
+      _markBothLinkLayersNeedsPaint();
     } else if (event is FlViewportZoomEvent) {
       _zoom = event.zoom;
       _transformChanged = true;
+      _markBothLinkLayersNeedsPaint();
     } else if (event is FlAreaHighlightEvent) {
       _selectionAreaPainter.highlightArea = event.area;
     } else if (event is FlDrawTempLinkEvent) {
       _tmpLinkCustomPainter.tmpLinkData = _getTmpLinkData();
-    } else if (event is FlDragProxyEventCat || event is FlDragSelectionStartEvent) {
+    } else if (event is FlActiveLinksTickEvent) {
+      // Active tier only — static layer's retained picture is composited as-is.
+      _activeLinksLayer.markNeedsPaint();
+      return;
+    } else if (event is FlActiveLinksMembershipEvent) {
+      _markBothLinkLayersNeedsPaint();
+      markNeedsPaint();
+      return;
+    } else if (event is FlDragProxyEventCat) {
       _applyDragProxyOffsets();
+      _activeLinksLayer.markNeedsPaint();
+      markNeedsPaint();
+      return;
+    } else if (event is FlDragSelectionStartEvent) {
+      // Membership moves drag-attached links into the active tier.
+      _applyDragProxyOffsets();
+      _markBothLinkLayersNeedsPaint();
       markNeedsPaint();
       return;
     } else if (event is FlDragSelectionEndEvent) {
       // Proxy already moved parentData.offset; still run a bounded layout so
       // spatial-hash + cachedRenderboxRect stay in sync with the commit.
       _childrenNotLaidOut.addAll(event.nodeIds);
+      _markBothLinkLayersNeedsPaint();
       markNeedsLayout();
       return;
     } else if (event is FlDragSelectionCommitEvent) {
       // Gesture path: End already scheduled layout. Undo/redo emits Commit only.
+      _markBothLinkLayersNeedsPaint();
       return _updateNodes();
     } else if (event is FlTreeEventCat || event is FlConfigurationChangeEvent) {
+      _markBothLinkLayersNeedsPaint();
       return _updateNodes(); // This handles marking for layout/paint as needed on its own
     } else if (event is FlNodeSelectionEvent) {
       _childrenNotLaidOut.addAll(event.nodeIds);
@@ -204,11 +320,13 @@ class NodeEditorRenderBox extends RenderBox
 
         _childrenNotPainted.addAll(_childrenById.keys);
 
+        _markBothLinkLayersNeedsPaint();
         markNeedsPaint();
       });
     } else if (event is FlLoadProjectEvent || event is FlNewProjectEvent) {
       _transformMatrix = null;
       _transformChanged = true;
+      _markBothLinkLayersNeedsPaint();
 
       _childrenNotLaidOut.addAll(_childrenById.keys);
       return _updateNodes();
@@ -216,10 +334,18 @@ class NodeEditorRenderBox extends RenderBox
 
     // Mark the render object for the correct rendering operation based on the event type.
     if (event is FlPaintEventCat) {
+      if (_controller.linksDataDirty || _transformChanged || _portsChanged) {
+        _markBothLinkLayersNeedsPaint();
+      }
       markNeedsPaint();
     } else if (event is FlLayoutEventCat) {
       markNeedsLayout();
     }
+  }
+
+  void _markBothLinkLayersNeedsPaint() {
+    _staticLinksLayer.markNeedsPaint();
+    _activeLinksLayer.markNeedsPaint();
   }
 
   final FlNodesController _controller;
@@ -261,9 +387,17 @@ class NodeEditorRenderBox extends RenderBox
   final LinksHitTestData _linksHitTestData;
   late final StaticLinksPainter _staticLinksPainter;
   late final ActiveLinksPainter _activeLinksPainter;
+  late final _LinksLayerRenderBox _staticLinksLayer;
+  late final _LinksLayerRenderBox _activeLinksLayer;
 
   @visibleForTesting
   int performLayoutCount = 0;
+
+  @visibleForTesting
+  int get staticLinksLayerPaintCount => _staticLinksLayer.paintCount;
+
+  @visibleForTesting
+  int get activeLinksLayerPaintCount => _activeLinksLayer.paintCount;
 
   /// Applies drag proxy offsets to child parentData without layout.
   void _applyDragProxyOffsets() {
@@ -475,7 +609,17 @@ class NodeEditorRenderBox extends RenderBox
     // TLDR: Flutter trickery. Don't question it.
     if (_isModalPresent) _childrenNotLaidOut.addAll(_childrenById.keys);
 
+    final bool sizeChanged = hasSize && size != constraints.biggest;
     size = constraints.biggest;
+
+    if (sizeChanged) {
+      _transformChanged = true;
+      _markBothLinkLayersNeedsPaint();
+    }
+
+    final BoxConstraints layerConstraints = BoxConstraints.tight(size);
+    _staticLinksLayer.layout(layerConstraints);
+    _activeLinksLayer.layout(layerConstraints);
 
     // If the child has not been laid out yet, we need to layout it.
     // Otherwise, we only need to layout it if it's within the viewport.
@@ -529,12 +673,14 @@ class NodeEditorRenderBox extends RenderBox
 
   @override
   void paint(PaintingContext context, Offset offset) {
+    // NOTE: never call markNeedsPaint() here — owner.debugDoingPaint is true.
     if (_lastViewportSize != size) {
       _lastViewportSize = size;
       _transformChanged = true;
     }
 
-    final ui.Rect viewport = _prepareCanvas(context.canvas, size);
+    final Matrix4 transform = _getTransformMatrix();
+    final ui.Rect viewport = _calculateViewport();
 
     // Performing the visibility update here ensures all layout operations are done.
 
@@ -545,33 +691,42 @@ class NodeEditorRenderBox extends RenderBox
         )
         .union(_childrenNotPainted);
 
-    _paintGrid(context.canvas, viewport);
+    // needsCompositing: true so child repaint-boundary layers sit under a
+    // TransformLayer (canvas.transform would not apply to those layers).
+    context.pushTransform(true, offset, transform, (PaintingContext ctx, Offset off) {
+      ctx.canvas.clipRect(
+        viewport,
+        clipOp: ui.ClipOp.intersect,
+        doAntiAlias: false,
+      );
 
-    _staticLinksPainter.paint(
-      context.canvas,
-      viewport,
-      transformChanged: _transformChanged,
-      portsChanged: _portsChanged,
-    );
+      _paintGrid(ctx.canvas, viewport);
 
-    _activeLinksPainter.paint(
-      context.canvas,
-      viewport,
-      transformChanged: _transformChanged,
-      portsChanged: _portsChanged,
-      proxyChanged: _controller.isDraggingSelection,
-    );
+      _staticLinksLayer.configure(
+        viewport: viewport,
+        transformChanged: _transformChanged,
+        portsChanged: _portsChanged,
+      );
+      _activeLinksLayer.configure(
+        viewport: viewport,
+        transformChanged: _transformChanged,
+        portsChanged: _portsChanged,
+      );
 
-    _paintChildren(context);
+      ctx.paintChild(_staticLinksLayer, off);
+      ctx.paintChild(_activeLinksLayer, off);
 
-    _tmpLinkCustomPainter.paint(context.canvas, viewport);
+      _paintChildren(ctx);
 
-    _selectionAreaPainter.paint(context.canvas, viewport);
+      _tmpLinkCustomPainter.paint(ctx.canvas, viewport);
 
-    if (kDebugMode) {
-      paintDebugViewport(context.canvas, viewport);
-      paintDebugOffset(context.canvas, size);
-    }
+      _selectionAreaPainter.paint(ctx.canvas, viewport);
+
+      if (kDebugMode) {
+        paintDebugViewport(ctx.canvas, viewport);
+        paintDebugOffset(ctx.canvas, size);
+      }
+    });
 
     _controller.nodesDataDirty = false;
     _controller.linksDataDirty = false;
@@ -591,20 +746,6 @@ class NodeEditorRenderBox extends RenderBox
       ..translateByVector3(Vector3(_offset.dx, _offset.dy, 0));
 
     return _transformMatrix!;
-  }
-
-  Rect _prepareCanvas(Canvas canvas, Size size) {
-    canvas.transform(_getTransformMatrix().storage);
-
-    final ui.Rect viewport = _calculateViewport();
-
-    canvas.clipRect(
-      viewport,
-      clipOp: ui.ClipOp.intersect,
-      doAntiAlias: false,
-    );
-
-    return viewport;
   }
 
   ////////////////////////////////////////////////////////////////////
@@ -752,6 +893,7 @@ class NodeEditorRenderBox extends RenderBox
         _portsChanged = true;
 
         SchedulerBinding.instance.addPostFrameCallback((_) {
+          _markBothLinkLayersNeedsPaint();
           markNeedsPaint();
         });
       } else {
@@ -1253,16 +1395,49 @@ class NodeEditorRenderBox extends RenderBox
   //////////////////////////////////////////////////////////////////
 
   @override
+  void attach(PipelineOwner owner) {
+    super.attach(owner);
+    _staticLinksLayer.attach(owner);
+    _activeLinksLayer.attach(owner);
+  }
+
+  @override
+  void detach() {
+    // Parent first — children assert attached == parent.attached.
+    super.detach();
+    _staticLinksLayer.detach();
+    _activeLinksLayer.detach();
+  }
+
+  @override
+  void redepthChildren() {
+    redepthChild(_staticLinksLayer);
+    redepthChild(_activeLinksLayer);
+    super.redepthChildren();
+  }
+
+  @override
+  void visitChildren(RenderObjectVisitor visitor) {
+    visitor(_staticLinksLayer);
+    visitor(_activeLinksLayer);
+    super.visitChildren(visitor);
+  }
+
+  @override
   void dispose() {
     _eventSubscription.cancel();
+    dropChild(_staticLinksLayer);
+    dropChild(_activeLinksLayer);
     super.dispose();
   }
 
   @override
   bool get isRepaintBoundary => true;
 
+  /// Required so [paint] can wrap link layers in a [TransformLayer] that child
+  /// repaint boundaries correctly inherit.
   @override
-  bool get alwaysNeedsCompositing => false;
+  bool get alwaysNeedsCompositing => true;
 
   @override
   void debugFillProperties(DiagnosticPropertiesBuilder properties) {
